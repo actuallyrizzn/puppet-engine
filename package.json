@@ -1,0 +1,31 @@
+{
+  "name": "puppet-engine",
+  "version": "0.1.0",
+  "description": "A framework for deploying autonomous AI agents on Twitter",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "nodemon src/index.js",
+    "test": "jest"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "mongodb": "^6.16.0",
+    "mongoose": "^7.5.3",
+    "node-cron": "^3.0.2",
+    "openai": "^4.12.1",
+    "twitter-api-v2": "^1.15.1",
+    "uuid": "^9.0.1",
+    "winston": "^3.10.0"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "nodemon": "^3.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "",
+  "license": "MIT"
+}
