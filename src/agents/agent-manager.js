@@ -10,6 +10,7 @@ const MemoryManager = require('../memory/memory-manager');
 const OpenAIProvider = require('../llm/openai-provider');
 const TwitterClient = require('../twitter/twitter-client');
 const cron = require('node-cron');
+const behaviorRandomizer = require('./behavior-randomizer');
 
 class AgentManager {
   constructor(options = {}) {
@@ -21,6 +22,7 @@ class AgentManager {
     
     this.lastPostTime = {}; // Track when agents last posted
     this.postSchedules = {}; // Cron schedules for agent posts
+    this.nextPostTimes = {}; // Track next scheduled post time for each agent
     
     // Setup event listeners
     if (this.eventEngine) {
@@ -139,15 +141,44 @@ class AgentManager {
       }
       
       // Register agent-specific Twitter client if credentials are provided
-      if (config.twitter_credentials && 
-          config.twitter_credentials.apiKey && 
-          config.twitter_credentials.apiKeySecret && 
-          config.twitter_credentials.accessToken && 
-          config.twitter_credentials.accessTokenSecret) {
+      if (config.twitter_credentials) {
         console.log(`Registering Twitter client for agent ${agent.id}`);
-        this.twitterClient.registerAgentClient(agent.id, config.twitter_credentials);
+        
+        // Check if we're using API or web scraping
+        const useTwitterAPI = process.env.USE_TWITTER_API !== 'false';
+        
+        if (useTwitterAPI) {
+          // Using official API - check for API keys
+          if (config.twitter_credentials.apiKey && 
+              config.twitter_credentials.apiKeySecret && 
+              config.twitter_credentials.accessToken && 
+              config.twitter_credentials.accessTokenSecret) {
+            this.twitterClient.registerAgentClient(agent.id, config.twitter_credentials);
+          } else {
+            console.log(`No valid Twitter API credentials for agent ${agent.id}, using default client`);
+          }
+        } else {
+          // Using web scraping - check for username/password
+          if (config.twitter_credentials.username && 
+              config.twitter_credentials.password) {
+            this.twitterClient.registerAgentClient(agent.id, config.twitter_credentials);
+          } else {
+            // Check if credentials exist in environment variables
+            const envUsername = process.env[`TWITTER_USERNAME_${agent.id}`];
+            const envPassword = process.env[`TWITTER_PASSWORD_${agent.id}`];
+            
+            if (envUsername && envPassword) {
+              this.twitterClient.registerAgentClient(agent.id, {
+                username: envUsername,
+                password: envPassword
+              });
+            } else {
+              console.log(`No valid Twitter credentials for agent ${agent.id}, using default client`);
+            }
+          }
+        }
       } else {
-        console.log(`No valid Twitter credentials for agent ${agent.id}, using default client`);
+        console.log(`No Twitter credentials provided for agent ${agent.id}, using default client`);
       }
       
       // Store the agent
@@ -185,38 +216,55 @@ class AgentManager {
       this.postSchedules[agentId].stop();
     }
     
-    // Calculate posting frequency
-    const { minHoursBetweenPosts, maxHoursBetweenPosts, peakPostingHours } = 
-      agent.behavior.postFrequency;
+    // Use a recurring check that schedules the next post dynamically
+    // This allows for timing variations while maintaining consistent activity
+    const checkInterval = 60 * 1000; // Check every minute
     
-    // More posts during peak hours, fewer otherwise
-    let cronSchedule;
-    
-    if (peakPostingHours && peakPostingHours.length > 0) {
-      // Create a cron schedule that posts at peak hours
-      // Join the peak hours with commas for the cron expression
-      const peakHoursString = peakPostingHours.join(',');
-      cronSchedule = `0 ${peakHoursString} * * *`; // At the peak hours every day
-      console.log(`Using peak hours schedule for agent ${agentId}: ${peakHoursString}`);
-    } else {
-      // Random time between min and max hours
-      const avgHours = Math.floor((minHoursBetweenPosts + maxHoursBetweenPosts) / 2);
-      cronSchedule = avgHours >= 1 
-        ? `0 */${Math.max(1, avgHours)} * * *` // Every X hours
-        : `*/${Math.max(30, Math.floor(avgHours * 60))} * * * *`; // Every Y minutes if less than an hour
-    }
-    
-    // Schedule the job
-    this.postSchedules[agentId] = cron.schedule(cronSchedule, () => {
-      this.createAgentPost(agentId);
+    // Schedule the recurring check
+    this.postSchedules[agentId] = cron.schedule('* * * * *', () => {
+      const now = Date.now();
+      
+      // If we have a next post time and it's in the past, create a post
+      if (this.nextPostTimes[agentId] && now >= this.nextPostTimes[agentId]) {
+        // Reset next post time
+        this.nextPostTimes[agentId] = null;
+        
+        // Create the post
+        this.createAgentPost(agentId);
+        
+        // Schedule the next post with randomized timing
+        this.scheduleNextPost(agentId);
+      } 
+      // If we don't have a next post time scheduled, create one
+      else if (!this.nextPostTimes[agentId]) {
+        this.scheduleNextPost(agentId);
+      }
     });
     
-    // Create one initial post to start things off
+    // Schedule the first post with a short delay to start things off
     setTimeout(() => {
-      this.createAgentPost(agentId);
-    }, 10000); // Post after 10 seconds
+      this.scheduleNextPost(agentId);
+    }, 10000); // 10 seconds delay
     
-    console.log(`Scheduled posts for agent ${agentId}: ${cronSchedule}`);
+    console.log(`Scheduled posting for agent ${agentId}`);
+  }
+  
+  /**
+   * Schedule the next post for an agent with natural timing variations
+   */
+  scheduleNextPost(agentId) {
+    const agent = this.getAgent(agentId);
+    
+    // Get randomized interval for next post
+    const nextPostInterval = behaviorRandomizer.getNextPostInterval(agent);
+    const nextPostTime = Date.now() + nextPostInterval;
+    
+    // Store the next post time
+    this.nextPostTimes[agentId] = nextPostTime;
+    
+    // Log the schedule
+    const minutesUntilPost = Math.round(nextPostInterval / (60 * 1000));
+    console.log(`Scheduled next post for agent ${agentId} in ~${minutesUntilPost} minutes`);
   }
   
   /**
@@ -253,8 +301,25 @@ class AgentManager {
         console.log(`Using custom system prompt from environment for ${agentId}`);
       }
       
+      // Randomize content preferences to add variety
+      const contentPreferences = behaviorRandomizer.randomizeContentPreferences(
+        agent.behavior.contentPreferences
+      );
+      
+      // Create a shallow copy of the agent with randomized content preferences
+      const agentWithRandomPrefs = { 
+        ...agent,
+        behavior: {
+          ...agent.behavior,
+          contentPreferences,
+          interactionPatterns: behaviorRandomizer.randomizeInteractionPatterns(
+            agent.behavior.interactionPatterns
+          )
+        }
+      };
+      
       // Generate content using LLM
-      const postContent = await this.llmProvider.generateContent(agent, {
+      const postContent = await this.llmProvider.generateContent(agentWithRandomPrefs, {
         task: options.task || 'post',
         topic: options.topic,
         replyTo: options.replyTo,
@@ -306,6 +371,11 @@ class AgentManager {
         // Update last post time
         agent.lastPostTime = now;
         
+        // Schedule next post after a successful post
+        if (!options.replyTo && !options.quoteTweet) {
+          this.scheduleNextPost(agentId);
+        }
+        
         return tweet;
       }
     } catch (error) {
@@ -339,6 +409,80 @@ class AgentManager {
       
       if (isMention) {
         console.log(`Detected mention of ${agentId}, creating reply immediately`);
+        
+        // For replies, we need to check if this is a reply to another tweet
+        // If so, fetch that tweet to include in the context
+        let originalTweet = null;
+        let conversationHistory = [];
+        let hasMeaningfulContext = false;
+        
+        if (tweet.replyToId) {
+          try {
+            console.log(`Fetching original tweet ${tweet.replyToId} for context`);
+            originalTweet = await this.twitterClient.getTweet(tweet.replyToId);
+            console.log(`Found original tweet: "${originalTweet.content.substring(0, 30)}..."`);
+            hasMeaningfulContext = true;
+            
+            // Add to conversation history
+            conversationHistory.push({
+              role: originalTweet.authorId === agentId ? "agent" : "user",
+              content: originalTweet.content
+            });
+            
+            // Try to get one more level of conversation if possible
+            if (originalTweet.replyToId) {
+              try {
+                console.log(`Fetching earlier tweet ${originalTweet.replyToId} for additional context`);
+                const earlierTweet = await this.twitterClient.getTweet(originalTweet.replyToId);
+                console.log(`Found earlier tweet: "${earlierTweet.content.substring(0, 30)}..."`);
+                
+                // Add to conversation history (in reverse chronological order)
+                conversationHistory.unshift({
+                  role: earlierTweet.authorId === agentId ? "agent" : "user",
+                  content: earlierTweet.content
+                });
+              } catch (error) {
+                console.error(`Error fetching earlier tweet ${originalTweet.replyToId}:`, error);
+                // Continue anyway even if we couldn't fetch the earlier tweet
+              }
+            }
+            
+            // Add current tweet to conversation history
+            conversationHistory.push({
+              role: "user",
+              content: tweet.content
+            });
+            
+            // Enhance the context with the original tweet and conversation history
+            tweet.originalTweet = originalTweet;
+            tweet.conversationHistory = conversationHistory;
+          } catch (error) {
+            console.error(`Error fetching original tweet ${tweet.replyToId}:`, error);
+            // Continue anyway even if we couldn't fetch the original
+          }
+        }
+        
+        // If there's no meaningful context, provide some default context
+        if (!hasMeaningfulContext) {
+          // Check if the tweet content is asking about context
+          const tweetContent = tweet.content.toLowerCase();
+          if (tweetContent.includes("what") && 
+              (tweetContent.includes("tweet") || 
+               tweetContent.includes("context") || 
+               tweetContent.includes("talking about"))) {
+            
+            console.log("User is asking about context. Providing a response with fresh conversation starter.");
+            
+            // Create a reply immediately, with special flag to avoid context questions
+            return this.createAgentPost(agentId, {
+              task: 'reply',
+              replyTo: tweet,
+              avoidContextQuestions: true,  // Special flag to handle this case
+              ignoreTimeConstraint: true // Allow replies anytime
+            });
+          }
+        }
+        
         // Create a reply immediately, bypassing the usual reaction generation
         return this.createAgentPost(agentId, {
           task: 'reply',
@@ -366,6 +510,17 @@ class AgentManager {
         case 'reply':
           // Only reply if probability check passes
           if (Math.random() <= replyProbability) {
+            // For regular replies, also fetch the original tweet for context if needed
+            if (!tweet.originalTweet && tweet.id) {
+              try {
+                console.log(`Fetching tweet ${tweet.id} for reply context`);
+                // We already have this tweet, just ensure it's properly assigned
+                tweet.originalTweet = tweet;
+              } catch (error) {
+                console.error(`Error ensuring tweet context for ${tweet.id}:`, error);
+              }
+            }
+            
             // Create a reply
             return this.createAgentPost(agentId, {
               task: 'reply',
@@ -551,7 +706,7 @@ class AgentManager {
   /**
    * Start monitoring Twitter for mentions for all agents
    */
-  async startMonitoringMentions(intervalMs = 15000) {
+  async startMonitoringMentions(intervalMs = 30000) {
     console.log(`Starting to monitor Twitter mentions every ${intervalMs/1000} seconds`);
     
     // Track last seen mention ID per agent
@@ -559,31 +714,84 @@ class AgentManager {
     
     // Set up periodic checking
     setInterval(async () => {
-      for (const agentId of Object.keys(this.agents)) {
-        try {
-          // Get mentions for this agent
-          const mentions = await this.twitterClient.getAgentMentions(
-            agentId, 
-            { sinceId: lastMentionIds[agentId] }
-          );
+      // Only check one agent at a time in rotation to avoid rate limits
+      const agentIds = Object.keys(this.agents);
+      const currentTime = Date.now();
+      const agentIndex = Math.floor(currentTime / intervalMs) % agentIds.length;
+      const agentId = agentIds[agentIndex];
+      
+      try {
+        console.log(`Checking mentions for agent ${agentId}...`);
+        // Get mentions for this agent
+        const mentions = await this.twitterClient.getAgentMentions(
+          agentId, 
+          { sinceId: lastMentionIds[agentId] }
+        );
+        
+        if (mentions.length > 0) {
+          console.log(`Found ${mentions.length} new mentions for agent ${agentId}`);
           
-          if (mentions.length > 0) {
-            console.log(`Found ${mentions.length} new mentions for agent ${agentId}`);
+          // Update last seen mention ID
+          lastMentionIds[agentId] = mentions[0].id;
+          
+          // Process each mention - immediately reply to all
+          for (const mention of mentions) {
+            // Add more details to the mention
+            mention.isDirectMention = true;  // Force treating as direct mention
             
-            // Update last seen mention ID
-            lastMentionIds[agentId] = mentions[0].id;
-            
-            // Process each mention - immediately reply to all
-            for (const mention of mentions) {
-              // Add more details to the mention
-              mention.isDirectMention = true;  // Force treating as direct mention
-              
-              await this.processAgentReaction(agentId, mention);
+            // If this is a reply to another tweet, fetch that tweet for context
+            if (mention.replyToId) {
+              try {
+                console.log(`Fetching original tweet ${mention.replyToId} for mention context`);
+                const originalTweet = await this.twitterClient.getTweet(mention.replyToId);
+                console.log(`Found original tweet: "${originalTweet.content.substring(0, 30)}..."`);
+                
+                // Create conversation history
+                let conversationHistory = [];
+                
+                // Add original tweet to conversation history
+                conversationHistory.push({
+                  role: originalTweet.authorId === agentId ? "agent" : "user",
+                  content: originalTweet.content
+                });
+                
+                // Try to get one more level of conversation if possible
+                if (originalTweet.replyToId) {
+                  try {
+                    console.log(`Fetching earlier tweet ${originalTweet.replyToId} for additional context`);
+                    const earlierTweet = await this.twitterClient.getTweet(originalTweet.replyToId);
+                    console.log(`Found earlier tweet: "${earlierTweet.content.substring(0, 30)}..."`);
+                    
+                    // Add to conversation history (in reverse chronological order)
+                    conversationHistory.unshift({
+                      role: earlierTweet.authorId === agentId ? "agent" : "user",
+                      content: earlierTweet.content
+                    });
+                  } catch (error) {
+                    console.error(`Error fetching earlier tweet ${originalTweet.replyToId}:`, error);
+                    // Continue anyway even if we couldn't fetch the earlier tweet
+                  }
+                }
+                
+                // Add current mention to conversation history
+                conversationHistory.push({
+                  role: "user",
+                  content: mention.content
+                });
+                
+                // Enhance the mention with context
+                mention.originalTweet = originalTweet;
+                mention.conversationHistory = conversationHistory;
+              } catch (error) {
+                console.error(`Error fetching original tweet for mention ${mention.id}:`, error);
+              }
             }
+            
+            await this.processAgentReaction(agentId, mention);
           }
-        } catch (error) {
-          console.error(`Error checking mentions for agent ${agentId}:`, error);
         }
+      } catch (error) {
+        console.error(`Error checking mentions for agent ${agentId}:`, error);
       }
     }, intervalMs);
   }

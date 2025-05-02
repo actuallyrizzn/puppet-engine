@@ -10,7 +10,7 @@ require('dotenv').config();
 
 // Core components
 const MemoryManager = require('./memory/memory-manager');
-const TwitterClient = require('./twitter/twitter-client');
+const TwitterAdapter = require('./twitter/twitter-adapter');
 const OpenAIProvider = require('./llm/openai-provider');
 const EventEngine = require('./events/event-engine');
 const AgentManager = require('./agents/agent-manager');
@@ -50,9 +50,9 @@ async function initializePuppetEngine() {
   logger.info('Starting Puppet Engine...');
   
   try {
-    // Create Twitter client
-    const twitterClient = new TwitterClient({
-      credentials: {
+    // Create Twitter adapter with the API client
+    const twitterAdapter = new TwitterAdapter({
+      apiCredentials: {
         apiKey: process.env.TWITTER_API_KEY,
         apiKeySecret: process.env.TWITTER_API_KEY_SECRET,
         accessToken: process.env.TWITTER_ACCESS_TOKEN,
@@ -60,6 +60,7 @@ async function initializePuppetEngine() {
         bearerToken: process.env.TWITTER_BEARER_TOKEN
       }
     });
+    
     logger.info('Twitter client initialized');
     
     // Create LLM provider
@@ -83,7 +84,7 @@ async function initializePuppetEngine() {
     const agentManager = new AgentManager({
       memoryManager,
       llmProvider,
-      twitterClient,
+      twitterClient: twitterAdapter,
       eventEngine
     });
     logger.info('Agent manager initialized');
@@ -103,7 +104,7 @@ async function initializePuppetEngine() {
     await apiServer.start();
     
     // Start monitoring Twitter for mentions
-    await agentManager.startMonitoringMentions();
+    await agentManager.startMonitoringMentions(60000); // Hardcoded to 60 seconds
     
     // Set up periodic events
     const agentIds = Object.keys(agentManager.agents);
@@ -115,7 +116,7 @@ async function initializePuppetEngine() {
     
     // Return the initialized components
     return {
-      twitterClient,
+      twitterClient: twitterAdapter,
       llmProvider,
       memoryManager,
       eventEngine,
@@ -140,5 +141,26 @@ if (require.main === module) {
       process.exit(1);
     });
 }
+
+// Clean up resources when the application exits
+process.on('SIGINT', async () => {
+  logger.info('Shutting down Puppet Engine...');
+  
+  // Get the current engine instance
+  const engine = require.main === module ? global.puppetEngine : null;
+  
+  if (engine && engine.twitterClient) {
+    // Clean up resources
+    await engine.twitterClient.close().catch(err => 
+      logger.error('Error closing Twitter client:', err)
+    );
+  }
+  
+  logger.info('Puppet Engine shut down successfully');
+  process.exit(0);
+});
+
+// Store the engine instance globally for cleanup
+global.puppetEngine = null;
 
 module.exports = { initializePuppetEngine }; 
