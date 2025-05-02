@@ -116,13 +116,30 @@ class OpenAIProvider {
       // Add conversation history if available
       if (options.replyTo.conversationHistory && options.replyTo.conversationHistory.length > 0) {
         context += "### Conversation History\n";
-        options.replyTo.conversationHistory.forEach((message, index) => {
+        
+        // Ensure conversation history is sorted chronologically (oldest first)
+        const sortedHistory = [...options.replyTo.conversationHistory].sort((a, b) => {
+          if (a.timestamp && b.timestamp) {
+            return a.timestamp - b.timestamp;
+          }
+          return 0;
+        });
+        
+        sortedHistory.forEach((message, index) => {
           const speaker = message.role === "agent" ? "You" : message.role === "user" ? options.replyTo.authorId : message.role;
           context += `${index + 1}. ${speaker}: "${message.content}"\n`;
         });
         context += "\n";
+        
+        // Get the most recent message to explicitly point it out
+        const mostRecent = sortedHistory[sortedHistory.length - 1];
+        if (mostRecent && mostRecent.role === "user") {
+          context += `IMPORTANT: You are now responding to the latest message from ${options.replyTo.authorId}: "${mostRecent.content}"\n\n`;
+        }
+        
         context += `IMPORTANT: Your reply MUST continue this conversation naturally. Directly address the most recent message from ${options.replyTo.authorId} while maintaining awareness of the entire conversation context.\n\n`;
         context += `Maintain natural conversational flow as if this is an ongoing dialogue. When appropriate, reference earlier parts of the conversation to show continuity.\n\n`;
+        context += `DO NOT ask for clarification about which tweet or context is being discussed. You have the complete conversation thread above.\n\n`;
       }
       // Add original tweet context if available but no conversation history
       else if (options.replyTo.originalTweet && options.replyTo.originalTweet.id !== options.replyTo.id) {

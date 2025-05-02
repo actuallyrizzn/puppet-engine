@@ -423,39 +423,29 @@ class AgentManager {
             console.log(`Found original tweet: "${originalTweet.content.substring(0, 30)}..."`);
             hasMeaningfulContext = true;
             
-            // Add to conversation history
-            conversationHistory.push({
-              role: originalTweet.authorId === agentId ? "agent" : "user",
-              content: originalTweet.content
-            });
-            
-            // Try to get one more level of conversation if possible
-            if (originalTweet.replyToId) {
-              try {
-                console.log(`Fetching earlier tweet ${originalTweet.replyToId} for additional context`);
-                const earlierTweet = await this.twitterClient.getTweet(originalTweet.replyToId);
-                console.log(`Found earlier tweet: "${earlierTweet.content.substring(0, 30)}..."`);
-                
-                // Add to conversation history (in reverse chronological order)
-                conversationHistory.unshift({
-                  role: earlierTweet.authorId === agentId ? "agent" : "user",
-                  content: earlierTweet.content
-                });
-              } catch (error) {
-                console.error(`Error fetching earlier tweet ${originalTweet.replyToId}:`, error);
-                // Continue anyway even if we couldn't fetch the earlier tweet
-              }
+            // Recursively fetch the conversation thread if not already provided
+            if (!tweet.conversationHistory) {
+              await this.fetchConversationThread(tweet.replyToId, conversationHistory, agentId);
+              
+              // Sort conversation history chronologically (oldest first)
+              conversationHistory.sort((a, b) => {
+                if (a.timestamp && b.timestamp) {
+                  return a.timestamp - b.timestamp;
+                }
+                return 0;
+              });
+              
+              // Add the current tweet to conversation history
+              conversationHistory.push({
+                role: "user",
+                content: tweet.content,
+                timestamp: tweet.createdAt ? tweet.createdAt.getTime() : Date.now()
+              });
+              
+              // Enhance the context with the conversation history
+              tweet.originalTweet = originalTweet;
+              tweet.conversationHistory = conversationHistory;
             }
-            
-            // Add current tweet to conversation history
-            conversationHistory.push({
-              role: "user",
-              content: tweet.content
-            });
-            
-            // Enhance the context with the original tweet and conversation history
-            tweet.originalTweet = originalTweet;
-            tweet.conversationHistory = conversationHistory;
           } catch (error) {
             console.error(`Error fetching original tweet ${tweet.replyToId}:`, error);
             // Continue anyway even if we couldn't fetch the original
@@ -514,8 +504,33 @@ class AgentManager {
             if (!tweet.originalTweet && tweet.id) {
               try {
                 console.log(`Fetching tweet ${tweet.id} for reply context`);
+                
+                // Recursively fetch the conversation thread
+                let conversationHistory = [];
+                
+                // The initial tweet is already available, just add it to history
+                conversationHistory.push({
+                  role: "user",
+                  content: tweet.content,
+                  timestamp: tweet.createdAt ? tweet.createdAt.getTime() : Date.now()
+                });
+                
+                // If this tweet is a reply to another, build the thread
+                if (tweet.replyToId) {
+                  await this.fetchConversationThread(tweet.replyToId, conversationHistory, agentId);
+                  
+                  // Sort conversation history chronologically (oldest first)
+                  conversationHistory.sort((a, b) => {
+                    if (a.timestamp && b.timestamp) {
+                      return a.timestamp - b.timestamp;
+                    }
+                    return 0;
+                  });
+                }
+                
                 // We already have this tweet, just ensure it's properly assigned
                 tweet.originalTweet = tweet;
+                tweet.conversationHistory = conversationHistory;
               } catch (error) {
                 console.error(`Error ensuring tweet context for ${tweet.id}:`, error);
               }
@@ -749,34 +764,22 @@ class AgentManager {
                 // Create conversation history
                 let conversationHistory = [];
                 
-                // Add original tweet to conversation history
-                conversationHistory.push({
-                  role: originalTweet.authorId === agentId ? "agent" : "user",
-                  content: originalTweet.content
-                });
+                // Recursively fetch the conversation thread
+                await this.fetchConversationThread(mention.replyToId, conversationHistory, agentId);
                 
-                // Try to get one more level of conversation if possible
-                if (originalTweet.replyToId) {
-                  try {
-                    console.log(`Fetching earlier tweet ${originalTweet.replyToId} for additional context`);
-                    const earlierTweet = await this.twitterClient.getTweet(originalTweet.replyToId);
-                    console.log(`Found earlier tweet: "${earlierTweet.content.substring(0, 30)}..."`);
-                    
-                    // Add to conversation history (in reverse chronological order)
-                    conversationHistory.unshift({
-                      role: earlierTweet.authorId === agentId ? "agent" : "user",
-                      content: earlierTweet.content
-                    });
-                  } catch (error) {
-                    console.error(`Error fetching earlier tweet ${originalTweet.replyToId}:`, error);
-                    // Continue anyway even if we couldn't fetch the earlier tweet
+                // Sort conversation history chronologically (oldest first)
+                conversationHistory.sort((a, b) => {
+                  if (a.timestamp && b.timestamp) {
+                    return a.timestamp - b.timestamp;
                   }
-                }
+                  return 0;
+                });
                 
                 // Add current mention to conversation history
                 conversationHistory.push({
                   role: "user",
-                  content: mention.content
+                  content: mention.content,
+                  timestamp: mention.createdAt.getTime()
                 });
                 
                 // Enhance the mention with context
@@ -794,6 +797,41 @@ class AgentManager {
         console.error(`Error checking mentions for agent ${agentId}:`, error);
       }
     }, intervalMs);
+  }
+  
+  /**
+   * Recursively fetch the conversation thread for a tweet
+   * This helps build a complete conversation history
+   */
+  async fetchConversationThread(tweetId, conversationHistory, agentId, depth = 0, maxDepth = 5) {
+    // Limit recursion depth to avoid infinite loops
+    if (depth >= maxDepth) return;
+    
+    try {
+      // Fetch the tweet
+      const tweet = await this.twitterClient.getTweet(tweetId);
+      
+      // Add to conversation history
+      conversationHistory.push({
+        role: tweet.authorId === agentId ? "agent" : "user",
+        content: tweet.content,
+        timestamp: tweet.createdAt.getTime()
+      });
+      
+      // If this tweet is a reply to another, recursively fetch that one too
+      if (tweet.replyToId) {
+        await this.fetchConversationThread(
+          tweet.replyToId, 
+          conversationHistory, 
+          agentId, 
+          depth + 1, 
+          maxDepth
+        );
+      }
+    } catch (error) {
+      console.error(`Error fetching tweet ${tweetId} for conversation thread:`, error);
+      // Continue even if we can't fetch a tweet in the thread
+    }
   }
 }
 
