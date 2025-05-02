@@ -20,7 +20,7 @@ Key features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/puppet-engine.git
+git clone https://github.com/DoughPurrp/puppet-engine.git
 cd puppet-engine
 
 # Install dependencies
