@@ -140,16 +140,19 @@ class OpenAIProvider {
         context += `IMPORTANT: Your reply MUST continue this conversation naturally. Directly address the most recent message from ${options.replyTo.authorId} while maintaining awareness of the entire conversation context.\n\n`;
         context += `Maintain natural conversational flow as if this is an ongoing dialogue. When appropriate, reference earlier parts of the conversation to show continuity.\n\n`;
         context += `DO NOT ask for clarification about which tweet or context is being discussed. You have the complete conversation thread above.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
       }
       // Add original tweet context if available but no conversation history
       else if (options.replyTo.originalTweet && options.replyTo.originalTweet.id !== options.replyTo.id) {
         context += `This tweet is in response to: "${options.replyTo.originalTweet.content}" from user ${options.replyTo.originalTweet.authorId}.\n\n`;
         context += `IMPORTANT: Your reply MUST directly address the specific content and question in the tweet you're replying to. Engage with what the user has said and maintain context from the conversation. Do not generate a generic or unrelated response.\n\n`;
         context += `Consider this part of an ongoing conversation. Maintain natural conversational flow as if continuing a dialogue. Ask follow-up questions when appropriate, and reference previous parts of the conversation to show continuity.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
       } else {
         // Even if there's no original tweet, ensure response is contextual
         context += `IMPORTANT: Your reply MUST directly address the specific content in the tweet you're replying to. Engage with what the user has said and respond appropriately to their message. Do not generate a generic or unrelated response.\n\n`;
         context += `Treat this as the beginning of a conversation that may continue. Your response should invite further engagement when appropriate. If the user is asking a question or starting a discussion, respond in a way that facilitates ongoing dialogue.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
       }
       
       // Handle vague mentions or tweets with limited context
@@ -241,7 +244,8 @@ class OpenAIProvider {
       directPrompt += `3. Your response should be authentic, casual, and under 280 characters.\n`;
       directPrompt += `4. Frequently use super brief and casual replies like "lol same", "idk let's chat", "what 😐", "fr fr", etc.\n`;
       directPrompt += `5. Talk like a real person on Twitter - be casual, memetic, and authentic rather than professional or formal.\n`;
-      directPrompt += `6. Stay in character as ${agent.name} with ${agent.personality.traits.join(', ')} traits.\n\n`;
+      directPrompt += `6. Stay in character as ${agent.name} with ${agent.personality.traits.join(', ')} traits.\n`;
+      directPrompt += `7. NEVER include or mention the user's ID (@${options.replyTo.authorId}) in your response. Reply directly without addressing them by their username.\n\n`;
       
       // Randomly vary temperature to get a mix of coherent and more random/playful responses
       const usePlayfulStyle = Math.random() < 0.5; // 50% chance of using more playful style
@@ -275,6 +279,29 @@ class OpenAIProvider {
           // Emergency fallback
           console.log("Emergency fallback for context questions");
           return `Absolutely! I find that fascinating. What other thoughts have been on your mind lately?`;
+        }
+        
+        // Check if response contains user ID and filter it out if needed
+        const userId = options.replyTo.authorId;
+        const userIdWithAt = `@${userId}`;
+        
+        if (content.includes(userId) || content.includes(userIdWithAt)) {
+          console.log("Direct response contains user ID, filtering it out");
+          
+          // Try removing the user ID and @ mentions
+          let filteredContent = content
+            .replace(new RegExp(`@${userId}\\b`, 'gi'), '')
+            .replace(new RegExp(`${userId}\\b`, 'gi'), '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // If the filtered content is too short or empty, use a fallback
+          if (filteredContent.length < 10) {
+            console.log("Filtered content too short, using fallback");
+            return `That's interesting! Tell me more about your thoughts on this.`;
+          }
+          
+          return filteredContent;
         }
         
         return content;
@@ -356,6 +383,43 @@ class OpenAIProvider {
         console.log("Retrying response generation to avoid context questions");
         const retryResponse = await this.client.chat.completions.create(retryOptions);
         return retryResponse.choices[0].message.content.trim();
+      }
+      
+      // Check if response still includes the user's ID and remove it if necessary
+      if (options.task === 'reply' && options.replyTo && options.replyTo.authorId) {
+        const userId = options.replyTo.authorId;
+        const userIdWithAt = `@${userId}`;
+        
+        if (content.includes(userId) || content.includes(userIdWithAt)) {
+          console.log("Response contains user ID, filtering it out");
+          
+          // Try removing the user ID and @ mentions
+          let filteredContent = content
+            .replace(new RegExp(`@${userId}\\b`, 'gi'), '')
+            .replace(new RegExp(`${userId}\\b`, 'gi'), '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // If the filtered content is too short or empty, retry generation
+          if (filteredContent.length < 10) {
+            const retryInstruction = "Generate a friendly response WITHOUT mentioning the user's ID or username. Respond directly to their message content only.";
+            
+            const retryOptions = {
+              ...requestOptions,
+              messages: [
+                { role: 'system', content: prompt },
+                { role: 'user', content: retryInstruction }
+              ],
+              temperature: 0.7 // Slightly higher temperature for more creativity
+            };
+            
+            console.log("Retrying response generation to avoid user ID mentions");
+            const retryResponse = await this.client.chat.completions.create(retryOptions);
+            return retryResponse.choices[0].message.content.trim();
+          }
+          
+          return filteredContent;
+        }
       }
       
       return content;
