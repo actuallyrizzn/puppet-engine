@@ -159,6 +159,73 @@ Puppet Engine supports running multiple agents simultaneously, each with their o
 
 Agents will automatically engage with each other based on their behavioral patterns and interaction settings. You can control the likelihood of different types of interactions through the `interaction_patterns` settings.
 
+### Timing Configuration
+
+The timing of agent actions is highly configurable at several levels:
+
+#### Agent-Level Timing (in agent JSON files)
+
+In each agent's JSON configuration file, you can set posting frequency parameters:
+
+```json
+"behavior": {
+  "post_frequency": {
+    "min_hours_between_posts": 1,      // Minimum hours between regular posts
+    "max_hours_between_posts": 4,      // Maximum hours between regular posts
+    "peak_posting_hours": [9, 12, 18, 21]  // Hours of the day when posting is more likely
+  }
+}
+```
+
+These settings control:
+- **min_hours_between_posts**: Minimum time gap between posts (can be fractional, e.g., 0.5 for 30 minutes)
+- **max_hours_between_posts**: Maximum time gap between posts
+- **peak_posting_hours**: Specific hours when the agent is more likely to post (24-hour format)
+
+#### System-Level Timing (in .env file)
+
+Global timing settings can be configured in your `.env` file:
+
+```
+ENGINE_POST_INTERVAL=3600000    # Default interval for post scheduling (in milliseconds)
+```
+
+#### Programmatic Timing (in source code)
+
+For more advanced timing changes, you can modify these files:
+
+1. **src/agents/agent-manager.js**:
+   - `scheduleAgentPosts`: Controls the Cron scheduling of posts
+   - `startMonitoringMentions`: Controls how frequently mentions are checked (default: 15 seconds)
+
+2. **src/events/event-engine.js**:
+   - `setupRandomEvents`: Controls the timing of random events (news, mood shifts, etc.)
+
+Example for modifying mention checking frequency:
+```javascript
+// In src/agents/agent-manager.js
+async startMonitoringMentions(intervalMs = 15000) { // 15 seconds
+  // ...
+}
+```
+
+Example for modifying random event frequency:
+```javascript
+// In event-engine.js
+eventEngine.setupRandomEvents(agentIds, {
+  newsInterval: 6 * 60 * 60 * 1000,    // News events every 6 hours
+  moodInterval: 4 * 60 * 60 * 1000,    // Mood shifts every 4 hours
+  interactionInterval: 8 * 60 * 60 * 1000  // Agent interactions every 8 hours
+});
+```
+
+#### Response Timing
+
+Replies to mentions happen immediately regardless of the posting schedule. This behavior is controlled in:
+- `processAgentReaction`: Always responds to mentions with `ignoreTimeConstraint: true`
+
+For testing purposes, you can make the system more aggressive by setting very small values (e.g., 0.01 hours = 36 seconds) in the agent's `post_frequency` settings.
+
 ## Architecture
 
 - `src/core` - Core engine components
@@ -171,4 +238,4 @@ Agents will automatically engage with each other based on their behavioral patte
 
 ## License
 
-MIT 
+MIT
