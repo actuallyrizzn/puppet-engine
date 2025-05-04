@@ -41,4 +41,9 @@ build/
 .Spotlight-V100
 .Trashes
 ehthumbs.db
-Thumbs.db 
+Thumbs.db
+
+# Test scripts
+test-*.js
+*-test.js
+*-debug.js 

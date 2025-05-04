@@ -15,6 +15,7 @@ Key features:
 - Event engine for simulated triggers and narrative shifts
 - Style consistency through runtime prompt engineering
 - Modular, open-source architecture
+- **Solana blockchain integration for autonomous trading** (NEW!)
 
 ## Installation
 
@@ -91,6 +92,19 @@ Agent definition files follow this structure:
     "accessTokenSecret": ""
   },
   
+  "solana_integration": {
+    "wallet_address": "",
+    "private_key": "", 
+    "network": "mainnet-beta",
+    "rpc_url": "https://api.mainnet-beta.solana.com",
+    "trade_safety": {
+      "max_trade_amount_sol": 0.1,
+      "min_wallet_balance_sol": 0.05,
+      "max_slippage_percent": 1.0
+    },
+    "trading_enabled": true
+  },
+  
   "custom_system_prompt": "Optional custom system prompt that overrides the default. This gives precise control over the agent's voice and behavior.",
   
   "personality": {
@@ -135,6 +149,52 @@ Agent definition files follow this structure:
       "max_thread_length": 3,
       "typical_post_length": 120,
       "link_sharing_frequency": 0.1
+    },
+    "trading_behavior": {
+      "trading_frequency": {
+        "min_hours_between_trades": 12,
+        "max_hours_between_trades": 72,
+        "random_probability": 0.15
+      },
+      "trade_decision_factors": [
+        "trending_tokens",
+        "top_gainers",
+        "random_selection",
+        "mood"
+      ],
+      "trade_tweet_probability": 1.0,
+      "max_trade_amount_per_transaction": 0.1,
+      "allowed_tokens": {
+        "always_tradable": [
+          "So11111111111111111111111111111111111111112",
+          "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v"
+        ],
+        "consider_trending": true,
+        "blacklist": []
+      }
+    }
+  },
+  
+  "agent_kit_integration": {
+    "enabled": true,
+    "methods": {
+      "allowed": [
+        "getTokenInfo",
+        "getTrendingTokens",
+        "getTopGainers",
+        "swapTokens",
+        "getTokenPriceData",
+        "getWalletBalance"
+      ],
+      "autonomous_only": [
+        "swapTokens" 
+      ]
+    },
+    "autonomy_rules": {
+      "ignore_human_trading_requests": true,
+      "max_daily_trades": 3,
+      "max_single_trade_amount_sol": 0.1,
+      "require_trending_validation": true
     }
   }
 }
@@ -235,6 +295,68 @@ For testing purposes, you can make the system more aggressive by setting very sm
 - `src/llm` - LLM prompt orchestration
 - `src/events` - Event trigger system
 - `src/api` - HTTP API for monitoring and control
+- `packages/trading` - Solana trading functionality
+- `packages/solana-agent-kit` - Solana blockchain integration
+
+## Solana Trading Integration
+
+Puppet Engine now supports Solana blockchain integration, allowing AI agents to have their own wallets and autonomously make trading decisions based on market data. For detailed setup and configuration instructions, see [README-solana-trading.md](README-solana-trading.md).
+
+Key features of the Solana integration:
+
+- **Autonomous Trading**: Agents can make their own trading decisions based on market data
+- **Secure Wallet Integration**: Each agent has its own Solana wallet (privkey stored in environment variables)
+- **Multi-Agent Support**: Configure unique wallets for each agent using agent-specific environment variables
+- **Trending Token Analysis**: Agents can track and trade trending tokens
+- **Authentic Tweets**: Agents post about their trades in their own unique voice
+- **Safety Controls**: Multiple safeguards prevent excessive trading or large transactions
+
+To enable trading for an agent, add the `solana_integration` and `agent_kit_integration` sections to your agent configuration file and provide Solana wallet private keys in your environment variables using the pattern `SOLANA_PRIVATE_KEY_AGENT_ID` (e.g., `SOLANA_PRIVATE_KEY_CLAUDIA_AGENT` for the "claudia-agent").
+
+## LLM Provider Integration
+
+The Puppet Engine supports multiple LLM providers for agent content generation:
+
+### OpenAI Integration
+
+The default LLM provider is OpenAI. To configure it, add your API key to the `.env` file:
+
+```
+OPENAI_API_KEY=your_api_key_here
+OPENAI_MODEL=gpt-4-turbo
+```
+
+### Grok Integration
+
+Puppet Engine also supports Grok as an LLM provider. To use Grok:
+
+1. Add your Grok API credentials to the `.env` file:
+   ```
+   GROK_API_KEY=your_grok_api_key_here
+   GROK_API_ENDPOINT=https://api.grok.x.com/v1/chat/completions
+   GROK_MODEL=grok-1
+   ```
+
+2. In your agent configuration file, set the LLM provider to Grok:
+   ```json
+   {
+     "id": "your-agent-id",
+     "name": "Your Agent Name",
+     "description": "Your agent description",
+     "llm_provider": "grok",
+     // ... rest of your agent configuration
+   }
+   ```
+
+### Using Different LLM Providers for Different Agents
+
+You can configure each agent to use a different LLM provider by setting the `llm_provider` field in the agent configuration file. This allows you to mix and match providers based on your needs.
+
+For example:
+- Agent A can use OpenAI: `"llm_provider": "openai"`
+- Agent B can use Grok: `"llm_provider": "grok"`
+
+If no provider is specified, the system will default to using OpenAI.
 
 ## License
 

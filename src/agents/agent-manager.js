@@ -8,6 +8,7 @@ const path = require('path');
 const { Agent, Personality, StyleGuide } = require('../core/types');
 const MemoryManager = require('../memory/memory-manager');
 const OpenAIProvider = require('../llm/openai-provider');
+const GrokProvider = require('../llm/grok-provider');
 const TwitterClient = require('../twitter/twitter-client');
 const cron = require('node-cron');
 const behaviorRandomizer = require('./behavior-randomizer');
@@ -16,13 +17,23 @@ class AgentManager {
   constructor(options = {}) {
     this.agents = {};
     this.memoryManager = options.memoryManager || new MemoryManager();
-    this.llmProvider = options.llmProvider || new OpenAIProvider();
+    this.defaultLLMProvider = options.llmProvider || new OpenAIProvider();
+    this.llmProviders = options.llmProviders || { 
+      openai: this.defaultLLMProvider,
+      grok: new GrokProvider()
+    };
+    this.agentLLMProviders = {}; // Map of agent ID to their specific LLM provider
     this.twitterClient = options.twitterClient || new TwitterClient();
     this.eventEngine = options.eventEngine;
     
     this.lastPostTime = {}; // Track when agents last posted
     this.postSchedules = {}; // Cron schedules for agent posts
     this.nextPostTimes = {}; // Track next scheduled post time for each agent
+    this.processedTweetIds = new Set(); // Track IDs of processed tweets
+    
+    // Twitter API error tracking
+    this.apiErrorCounts = {}; // Track consecutive API errors by agent
+    this.apiCooldowns = {}; // Track cooldown end times by agent
     
     // Setup event listeners
     if (this.eventEngine) {
@@ -130,6 +141,21 @@ class AgentManager {
         }
       }
       
+      // Set agent's LLM provider based on configuration
+      if (config.llm_provider) {
+        const providerName = config.llm_provider.toLowerCase();
+        if (this.llmProviders[providerName]) {
+          this.agentLLMProviders[agent.id] = this.llmProviders[providerName];
+          console.log(`Using ${providerName} provider for agent ${agent.id}`);
+        } else {
+          console.log(`LLM provider ${providerName} not found for agent ${agent.id}, using default provider`);
+          this.agentLLMProviders[agent.id] = this.defaultLLMProvider;
+        }
+      } else {
+        // Default to OpenAI if not specified
+        this.agentLLMProviders[agent.id] = this.defaultLLMProvider;
+      }
+      
       // Initialize memory
       if (config.initial_memory) {
         agent.memory = this.memoryManager.initializeAgentMemory(
@@ -203,6 +229,13 @@ class AgentManager {
       throw new Error(`Agent not found: ${agentId}`);
     }
     return agent;
+  }
+  
+  /**
+   * Get the LLM provider for a specific agent
+   */
+  getLLMProviderForAgent(agentId) {
+    return this.agentLLMProviders[agentId] || this.defaultLLMProvider;
   }
   
   /**
@@ -318,8 +351,11 @@ class AgentManager {
         }
       };
       
+      // Get the appropriate LLM provider for this agent
+      const llmProvider = this.getLLMProviderForAgent(agentId);
+      
       // Generate content using LLM
-      const postContent = await this.llmProvider.generateContent(agentWithRandomPrefs, {
+      const postContent = await llmProvider.generateContent(agentWithRandomPrefs, {
         task: options.task || 'post',
         topic: options.topic,
         replyTo: options.replyTo,
@@ -390,11 +426,21 @@ class AgentManager {
   async processAgentReaction(agentId, tweet) {
     try {
       const agent = this.getAgent(agentId);
+      const llmProvider = this.getLLMProviderForAgent(agentId);
       
       // Skip if the tweet is from the agent itself
       if (tweet.authorId === agentId) {
         return null;
       }
+      
+      // Skip if we've already processed this tweet
+      if (this.processedTweetIds.has(tweet.id)) {
+        console.log(`Skipping tweet ${tweet.id} as it was already processed`);
+        return null;
+      }
+      
+      // Add this tweet to our processed set
+      this.processedTweetIds.add(tweet.id);
       
       // For mentions and replies, always reply
       // Check for mentions in different ways to be thorough
@@ -482,7 +528,7 @@ class AgentManager {
       }
       
       // Generate reaction using LLM
-      const reaction = await this.llmProvider.generateReaction(agent, tweet);
+      const reaction = await llmProvider.generateReaction(agent, tweet);
       
       // Adjust probabilities based on configuration
       const { replyProbability, quoteTweetProbability, likeProbability } = 
@@ -654,18 +700,46 @@ class AgentManager {
             // This agent is prompted to interact with another
             const targetId = event.data.targetId;
             
-            // Get some recent posts from the target agent
-            // In a real implementation, this would fetch from Twitter
-            // For now, we'll just generate a post to respond to
-            const fakePost = {
-              id: `fake-${Date.now()}`,
-              content: `This is a fake post about ${event.data.topic} for testing`,
-              authorId: targetId,
-              createdAt: new Date()
-            };
-            
-            // Process reaction to the post
-            return this.processAgentReaction(agentId, fakePost);
+            try {
+              // Get recent posts from the target agent
+              console.log(`Fetching recent tweets from agent ${targetId} for interaction`);
+              const recentTweets = await this.twitterClient.getUserTimeline(targetId, { limit: 5 });
+              
+              if (recentTweets && recentTweets.length > 0) {
+                // Pick a random tweet to react to
+                const randomIndex = Math.floor(Math.random() * recentTweets.length);
+                const tweetToReactTo = recentTweets[randomIndex];
+                
+                console.log(`Agent ${agentId} will react to tweet: "${tweetToReactTo.content.substring(0, 30)}..."`);
+                
+                // Process reaction to the real tweet
+                return this.processAgentReaction(agentId, tweetToReactTo);
+              } else {
+                // Fallback to fake post if no tweets found
+                console.log(`No tweets found for ${targetId}, using a fake post instead`);
+                const fakePost = {
+                  id: `fake-${Date.now()}`,
+                  content: `This is a post about ${event.data.topic}`,
+                  authorId: targetId,
+                  createdAt: new Date()
+                };
+                
+                // Process reaction to the fake post
+                return this.processAgentReaction(agentId, fakePost);
+              }
+            } catch (error) {
+              console.error(`Error fetching tweets for agent ${targetId}:`, error);
+              // Fallback to fake post in case of error
+              const fakePost = {
+                id: `fake-${Date.now()}`,
+                content: `This is a post about ${event.data.topic}`,
+                authorId: targetId,
+                createdAt: new Date()
+              };
+              
+              // Process reaction to the fake post
+              return this.processAgentReaction(agentId, fakePost);
+            }
           }
           break;
       }
@@ -719,40 +793,212 @@ class AgentManager {
   }
   
   /**
-   * Start monitoring Twitter for mentions for all agents
+   * Start streaming Twitter for mentions for all agents
+   * Uses the Twitter filtered stream API for real-time mention notifications
    */
-  async startMonitoringMentions(intervalMs = 30000) {
-    console.log(`Starting to monitor Twitter mentions every ${intervalMs/1000} seconds`);
+  async startStreamingMentions() {
+    console.log(`Starting Twitter mention monitoring for all agents`);
     
-    // Track last seen mention ID per agent
-    const lastMentionIds = {};
-    
-    // Set up periodic checking
-    setInterval(async () => {
-      // Only check one agent at a time in rotation to avoid rate limits
-      const agentIds = Object.keys(this.agents);
-      const currentTime = Date.now();
-      const agentIndex = Math.floor(currentTime / intervalMs) % agentIds.length;
-      const agentId = agentIds[agentIndex];
+    // Check if streaming is disabled in .env
+    const useStreaming = process.env.USE_TWITTER_STREAMING !== 'false';
+    if (!useStreaming) {
+      console.log('Twitter streaming API is disabled in .env, using polling instead');
       
+      // Start polling for all agents
+      for (const agentId of Object.keys(this.agents)) {
+        this._startPollingMentionsForAgent(agentId, 
+          parseInt(process.env.MENTION_POLLING_INTERVAL) || 60000);
+      }
+      
+      return;
+    }
+    
+    // Keep track of active streams
+    this.mentionStreams = {};
+    
+    // Start a stream for each agent
+    for (const agentId of Object.keys(this.agents)) {
       try {
-        console.log(`Checking mentions for agent ${agentId}...`);
+        console.log(`Setting up real-time mention stream for agent ${agentId}...`);
+        
+        // Define callback to process mentions in real-time
+        const onMention = async (mention) => {
+          console.log(`Processing real-time mention for agent ${agentId}: "${mention.content.substring(0, 30)}..."`);
+          
+          // Process the mention right away
+          await this.processAgentReaction(agentId, mention);
+        };
+        
+        // Start the stream with retry logic
+        const maxRetries = 2;
+        let retryCount = 0;
+        let stream = null;
+        
+        while (retryCount <= maxRetries && !stream) {
+          try {
+            if (retryCount > 0) {
+              console.log(`Retry attempt ${retryCount} for starting mention stream for agent ${agentId}`);
+              // Wait before retry
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
+            
+            // Attempt to start the stream
+            stream = await this.twitterClient.startMentionStream(agentId, onMention);
+            
+            // If we get here, the stream started successfully
+            this.mentionStreams[agentId] = stream;
+            console.log(`Successfully started mention stream for agent ${agentId}`);
+            
+          } catch (error) {
+            console.error(`Error starting mention stream for agent ${agentId} (attempt ${retryCount + 1}):`, error);
+            retryCount++;
+            
+            // If we've reached max retries, fall back to polling
+            if (retryCount > maxRetries) {
+              console.log(`Reached max retries (${maxRetries}). Falling back to polling for agent ${agentId}`);
+              this._startPollingMentionsForAgent(
+                agentId, 
+                parseInt(process.env.MENTION_POLLING_INTERVAL) || 60000
+              );
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error in stream setup process for agent ${agentId}:`, error);
+        console.log(`Will fall back to polling for this agent.`);
+        
+        // Fall back to polling for this agent
+        this._startPollingMentionsForAgent(
+          agentId,
+          parseInt(process.env.MENTION_POLLING_INTERVAL) || 60000
+        );
+      }
+    }
+  }
+  
+  /**
+   * Stop streaming mentions for all agents
+   */
+  async stopStreamingMentions() {
+    console.log('Stopping all mention streams...');
+    
+    // Close all streams
+    if (this.mentionStreams) {
+      for (const [agentId, stream] of Object.entries(this.mentionStreams)) {
+        try {
+          if (stream && typeof stream.close === 'function') {
+            console.log(`Closing mention stream for agent ${agentId}...`);
+            await stream.close().catch(err => {
+              console.warn(`Non-fatal error closing stream for ${agentId}:`, err);
+            });
+            console.log(`Closed mention stream for agent ${agentId}`);
+          }
+        } catch (error) {
+          console.error(`Error closing mention stream for agent ${agentId}:`, error);
+        }
+      }
+      this.mentionStreams = {};
+    }
+    
+    // Clear all polling intervals
+    if (this.mentionPollingIntervals) {
+      for (const [agentId, intervalId] of Object.entries(this.mentionPollingIntervals)) {
+        clearInterval(intervalId);
+        console.log(`Stopped polling mentions for agent ${agentId}`);
+      }
+      this.mentionPollingIntervals = {};
+    }
+    
+    console.log('All mention streams stopped');
+  }
+  
+  /**
+   * Fall back method to poll for mentions instead of streaming
+   * @private
+   */
+  _startPollingMentionsForAgent(agentId, intervalMs = 60000) {
+    console.log(`Starting polling for Twitter mentions for agent ${agentId} every ${intervalMs/1000} seconds`);
+    
+    // Load processed tweets when starting polling
+    this.loadProcessedTweets();
+    
+    // Track last seen mention ID for this agent
+    let lastMentionId = null;
+    // Store username to filter mentions
+    let agentUsername = null;
+    
+    // Initialize error tracking for this agent if not exists
+    if (!this.apiErrorCounts[agentId]) {
+      this.apiErrorCounts[agentId] = 0;
+    }
+    
+    // Set up interval to check mentions
+    const intervalId = setInterval(async () => {
+      try {
+        // Check if we're in a cooldown period
+        const now = Date.now();
+        if (this.apiCooldowns[agentId] && now < this.apiCooldowns[agentId]) {
+          const remainingCooldownMinutes = Math.ceil((this.apiCooldowns[agentId] - now) / (60 * 1000));
+          console.log(`Skipping mention check for agent ${agentId} - in cooldown for ${remainingCooldownMinutes} more minutes`);
+          return;
+        }
+        
+        console.log(`Polling for mentions for agent ${agentId}...`);
+        
+        // If we don't have the agent's username yet, get it
+        if (!agentUsername) {
+          try {
+            const meResult = await this.twitterClient.getClientForAgent(agentId).v2.me();
+            agentUsername = meResult.data.username.toLowerCase();
+            console.log(`Stored agent username ${agentUsername} for filtering mentions`);
+          } catch (error) {
+            console.error(`Error getting username for agent ${agentId}:`, error);
+            this._handleApiError(agentId, error);
+            return;
+          }
+        }
+        
         // Get mentions for this agent
         const mentions = await this.twitterClient.getAgentMentions(
           agentId, 
-          { sinceId: lastMentionIds[agentId] }
+          { sinceId: lastMentionId }
         );
+        
+        // Reset error count on successful API call
+        this.apiErrorCounts[agentId] = 0;
         
         if (mentions.length > 0) {
           console.log(`Found ${mentions.length} new mentions for agent ${agentId}`);
           
           // Update last seen mention ID
-          lastMentionIds[agentId] = mentions[0].id;
+          lastMentionId = mentions[0].id;
           
-          // Process each mention - immediately reply to all
-          for (const mention of mentions) {
+          // Filter out self-mentions and process each real mention
+          const filteredMentions = mentions.filter(mention => {
+            // Check if this is a self-mention by comparing author username
+            const isSelfMention = mention.authorUsername && 
+                                  agentUsername && 
+                                  mention.authorUsername.toLowerCase() === agentUsername;
+            
+            if (isSelfMention) {
+              console.log(`Skipping self-mention from ${mention.authorUsername}`);
+              return false;
+            }
+            
+            // Also filter out tweets we've already processed
+            if (this.processedTweetIds.has(mention.id)) {
+              console.log(`Skipping already processed mention ${mention.id}`);
+              return false;
+            }
+            
+            return true;
+          });
+          
+          console.log(`Processing ${filteredMentions.length} mentions after filtering out self-mentions and already processed tweets`);
+          
+          for (const mention of filteredMentions) {
             // Add more details to the mention
-            mention.isDirectMention = true;  // Force treating as direct mention
+            mention.isDirectMention = true;
             
             // If this is a reply to another tweet, fetch that tweet for context
             if (mention.replyToId) {
@@ -792,11 +1038,55 @@ class AgentManager {
             
             await this.processAgentReaction(agentId, mention);
           }
+          
+          // Save processed tweets after handling mentions
+          this.saveProcessedTweets();
         }
       } catch (error) {
         console.error(`Error checking mentions for agent ${agentId}:`, error);
+        this._handleApiError(agentId, error);
       }
     }, intervalMs);
+    
+    // Store the interval ID so we can clear it if needed
+    this.mentionPollingIntervals = this.mentionPollingIntervals || {};
+    this.mentionPollingIntervals[agentId] = intervalId;
+  }
+  
+  /**
+   * Handle API errors with progressive backoff
+   * @private
+   */
+  _handleApiError(agentId, error) {
+    // Increment error count
+    this.apiErrorCounts[agentId] = (this.apiErrorCounts[agentId] || 0) + 1;
+    
+    // Calculate backoff time based on number of consecutive errors
+    // Start with 1 minute, then 5, 15, 30, and max at 60 minutes
+    let backoffMinutes = 1;
+    
+    if (this.apiErrorCounts[agentId] >= 5) {
+      backoffMinutes = 60; // Maximum backoff of 1 hour
+    } else if (this.apiErrorCounts[agentId] >= 4) {
+      backoffMinutes = 30;
+    } else if (this.apiErrorCounts[agentId] >= 3) {
+      backoffMinutes = 15;
+    } else if (this.apiErrorCounts[agentId] >= 2) {
+      backoffMinutes = 5;
+    }
+    
+    // Apply longer backoff for rate limit errors
+    if (error.code === 429 || (error.errors && error.errors.some(e => e.code === 88))) {
+      backoffMinutes = Math.max(backoffMinutes, 15);
+      console.log(`Rate limit exceeded for Twitter API. Applying extended cooldown.`);
+    }
+    
+    // Set cooldown end time
+    const cooldownMs = backoffMinutes * 60 * 1000;
+    this.apiCooldowns[agentId] = Date.now() + cooldownMs;
+    
+    console.log(`Twitter API error for agent ${agentId}. Setting cooldown for ${backoffMinutes} minutes.`);
+    console.log(`API calls will resume after ${new Date(this.apiCooldowns[agentId]).toLocaleTimeString()}`);
   }
   
   /**
@@ -831,6 +1121,57 @@ class AgentManager {
     } catch (error) {
       console.error(`Error fetching tweet ${tweetId} for conversation thread:`, error);
       // Continue even if we can't fetch a tweet in the thread
+    }
+  }
+
+  // Add a method to persist the processed tweets
+  saveProcessedTweets() {
+    try {
+      // Convert Set to Array for storage
+      const processedTweets = Array.from(this.processedTweetIds);
+      // Only keep the most recent 1000 tweets to avoid excessive memory usage
+      const recentTweets = processedTweets.slice(-1000);
+      
+      // Save to file
+      fs.writeFileSync(
+        path.join(process.cwd(), 'data', 'processed_tweets.json'), 
+        JSON.stringify(recentTweets),
+        'utf8'
+      );
+      console.log(`Saved ${recentTweets.length} processed tweet IDs`);
+    } catch (error) {
+      console.error('Error saving processed tweets:', error);
+    }
+  }
+  
+  // Add a method to load the processed tweets
+  loadProcessedTweets() {
+    try {
+      const filePath = path.join(process.cwd(), 'data', 'processed_tweets.json');
+      
+      // Create directory if it doesn't exist
+      const dir = path.dirname(filePath);
+      if (!fs.existsSync(dir)) {
+        fs.mkdirSync(dir, { recursive: true });
+      }
+      
+      // Check if file exists
+      if (fs.existsSync(filePath)) {
+        const data = fs.readFileSync(filePath, 'utf8');
+        const processedTweets = JSON.parse(data);
+        
+        // Add to the Set
+        processedTweets.forEach(id => this.processedTweetIds.add(id));
+        console.log(`Loaded ${processedTweets.length} previously processed tweet IDs`);
+      } else {
+        console.log('No previous processed tweets found');
+        // Create an empty file
+        fs.writeFileSync(filePath, '[]', 'utf8');
+      }
+    } catch (error) {
+      console.error('Error loading processed tweets:', error);
+      // Initialize with empty set in case of error
+      this.processedTweetIds = new Set();
     }
   }
 }

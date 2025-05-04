@@ -383,12 +383,29 @@ class EventEngine {
     // Schedule recurring interaction events between agents
     if (agentIds.length >= 2) {
       setInterval(() => {
-        // Pick two random agents
-        const shuffled = [...agentIds].sort(() => 0.5 - Math.random());
-        const agent1 = shuffled[0];
-        const agent2 = shuffled[1];
+        // Determine how many interactions to trigger (1-3)
+        const interactionCount = Math.floor(Math.random() * 3) + 1;
         
-        this.generateInteractionEvent(agent1, agent2);
+        // Generate multiple interactions
+        for (let i = 0; i < interactionCount; i++) {
+          // Don't generate too many at once if there are few agents
+          if (i > 0 && agentIds.length < 4) break;
+          
+          // Pick two random agents
+          const shuffled = [...agentIds].sort(() => 0.5 - Math.random());
+          const agent1 = shuffled[0];
+          const agent2 = shuffled[1];
+          
+          // Only proceed if we found two different agents
+          if (agent1 && agent2 && agent1 !== agent2) {
+            this.generateInteractionEvent(agent1, agent2);
+            
+            // Sometimes generate bi-directional interaction (agent2 also notices agent1)
+            if (Math.random() < 0.3) {
+              this.generateInteractionEvent(agent2, agent1);
+            }
+          }
+        }
       }, interactionInterval);
     }
   }

@@ -1,25 +1,24 @@
 /**
- * OpenAI provider for Puppet Engine
- * Handles LLM interactions for agent content generation
+ * Grok provider for Puppet Engine
+ * Handles LLM interactions with Grok API for agent content generation
  */
 
-const { OpenAI } = require('openai');
+const axios = require('axios');
 const tweetVariety = require('./tweet-variety-helpers');
 const { enhanceTweetInstruction, enhanceReplyInstruction } = require('./tweet-variety-helpers');
 
-class OpenAIProvider {
+class GrokProvider {
   constructor(options = {}) {
-    this.client = new OpenAI({
-      apiKey: options.apiKey || process.env.OPENAI_API_KEY
-    });
-    
-    this.defaultModel = options.model || process.env.OPENAI_MODEL || 'gpt-4-turbo';
+    this.apiKey = options.apiKey || process.env.GROK_API_KEY;
+    this.apiEndpoint = options.apiEndpoint || process.env.GROK_API_ENDPOINT || 'https://api.grok.x.com/v1/chat/completions';
+    this.defaultModel = options.model || process.env.GROK_MODEL || 'grok-1';
     this.maxTokens = options.maxTokens || 1024;
     this.temperature = options.temperature || 0.7;
   }
   
   /**
    * Generate a prompt for the agent based on its persona and context
+   * This function is identical to OpenAI's prompt builder since the prompt structure is the same
    */
   buildAgentPrompt(agent, options = {}) {
     const { personality, styleGuide, memory } = agent;
@@ -138,41 +137,24 @@ class OpenAIProvider {
           context += `IMPORTANT: You are now responding to the latest message from ${options.replyTo.authorId}: "${mostRecent.content}"\n\n`;
         }
         
-        context += `IMPORTANT: Your reply MUST continue this conversation naturally. Directly address the most recent message from ${options.replyTo.authorId} while maintaining awareness of the entire conversation context.\n\n`;
-        context += `Maintain natural conversational flow as if this is an ongoing dialogue. When appropriate, reference earlier parts of the conversation to show continuity.\n\n`;
-        context += `DO NOT ask for clarification about which tweet or context is being discussed. You have the complete conversation thread above.\n\n`;
-        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
+        context += `IMPORTANT: Your reply MUST continue this conversation naturally.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response.\n\n`;
       }
       // Add original tweet context if available but no conversation history
       else if (options.replyTo.originalTweet && options.replyTo.originalTweet.id !== options.replyTo.id) {
         context += `This tweet is in response to: "${options.replyTo.originalTweet.content}" from user ${options.replyTo.originalTweet.authorId}.\n\n`;
-        context += `IMPORTANT: Your reply MUST directly address the specific content and question in the tweet you're replying to. Engage with what the user has said and maintain context from the conversation. Do not generate a generic or unrelated response.\n\n`;
-        context += `Consider this part of an ongoing conversation. Maintain natural conversational flow as if continuing a dialogue. Ask follow-up questions when appropriate, and reference previous parts of the conversation to show continuity.\n\n`;
-        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
+        context += `IMPORTANT: Your reply MUST directly address the specific content in the tweet you're replying to.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response.\n\n`;
       } else {
         // Even if there's no original tweet, ensure response is contextual
-        context += `IMPORTANT: Your reply MUST directly address the specific content in the tweet you're replying to. Engage with what the user has said and respond appropriately to their message. Do not generate a generic or unrelated response.\n\n`;
-        context += `Treat this as the beginning of a conversation that may continue. Your response should invite further engagement when appropriate. If the user is asking a question or starting a discussion, respond in a way that facilitates ongoing dialogue.\n\n`;
-        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
-      }
-      
-      // Handle vague mentions or tweets with limited context
-      const tweetContent = options.replyTo.content.toLowerCase();
-      if (tweetContent.includes("what") && (tweetContent.includes("tweet") || tweetContent.includes("context") || tweetContent.includes("talking about"))) {
-        context += `CRITICAL INSTRUCTION: The user is asking about what tweet or context you're referring to. This is happening because you're not providing enough context in your responses. DO NOT ask them what tweet they're referring to or what's on their mind.\n\n`;
-        context += `Instead, respond with something substantive and engaging without requiring additional context. For example, share an interesting thought or observation, ask an open-ended question about a topic relevant to your persona, or make a friendly comment that doesn't presuppose prior context.\n\n`;
-        context += `If there truly is no context and you've been mentioned out of the blue, simply engage in a friendly way without asking for clarification about previous tweets or conversations.\n\n`;
+        context += `IMPORTANT: Your reply MUST directly address the specific content in the tweet you're replying to.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response.\n\n`;
       }
       
       // Add relationship context if available
       if (options.replyTo.authorId in memory.relationships) {
         const rel = memory.relationships[options.replyTo.authorId];
         context += `Your relationship with this user: Sentiment ${rel.sentiment.toFixed(1)}, Familiarity ${rel.familiarity.toFixed(1)}.\n\n`;
-        
-        // If we've interacted with this user before, emphasize conversation continuity
-        if (rel.familiarity > 0.2) {
-          context += `You've interacted with this user before, so maintain appropriate continuity in your conversation style and topics discussed previously.\n\n`;
-        }
       }
     } else if (options.task === 'quote_tweet' && options.quoteTweet) {
       context += "### Task: Quote Tweet\n";
@@ -203,15 +185,42 @@ class OpenAIProvider {
   }
   
   /**
+   * Make a request to the Grok API
+   */
+  async makeGrokRequest(messages, options = {}) {
+    try {
+      const response = await axios.post(
+        this.apiEndpoint,
+        {
+          model: options.model || this.defaultModel,
+          messages,
+          max_tokens: options.max_tokens || this.maxTokens,
+          temperature: options.temperature || this.temperature
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      return response.data.choices[0].message.content;
+    } catch (error) {
+      console.error('Error calling Grok API:', error);
+      throw new Error(`Grok API error: ${error.message}`);
+    }
+  }
+  
+  /**
    * Generate content for an agent
    */
   async generateContent(agent, options = {}) {
-    // For replies, always make sure we have a simpler, more direct prompt
+    // For replies, use a simplified prompt
     if (options.task === 'reply' && options.replyTo) {
-      // Create a simplified prompt that focuses on just responding to the tweet content
       let directPrompt = `You are ${agent.name}, ${agent.description}.\n\n`;
       
-      // Add some personality traits
+      // Add personality traits
       directPrompt += `### Personality\n`;
       directPrompt += `- You have these traits: ${agent.personality.traits.join(', ')}\n`;
       directPrompt += `- Your speaking style: ${agent.personality.speakingStyle} - casual and conversational\n`;
@@ -220,75 +229,47 @@ class OpenAIProvider {
       directPrompt += `- You respond naturally, as if texting a friend\n`;
       directPrompt += `- Your current mood: ${agent.currentMood.valence > 0 ? 'Positive' : agent.currentMood.valence < 0 ? 'Negative' : 'Neutral'}\n\n`;
       
-      // Add casual, natural style guidance
+      // Add style guidance
       directPrompt += `### Style Guidance\n`;
       directPrompt += `- CRITICAL: Your replies must sound like real, natural text messages from a real person\n`;
       directPrompt += `- NEVER use quotation marks around your response - just write the text directly\n`;
-      directPrompt += `- DON'T use cliché internet phrases like "caught in 4k", "it's giving", etc. too much\n`;
-      directPrompt += `- DON'T be too on-the-nose or predictable in your responses\n`;
       directPrompt += `- Use casual language naturally, not like you're following a template\n`;
-      directPrompt += `- Sometimes use contractions like "can't", "don't", "won't" to sound natural\n`;
-      directPrompt += `- Use abbreviations like "u", "ur", "idk", "lol", etc. occasionally but not in every message\n`;
       directPrompt += `- ONLY use lowercase typing style with minimal punctuation\n`;
       directPrompt += `- Keep responses concise - sometimes very brief, sometimes a bit longer\n`;
-      directPrompt += `- Sometimes be a bit dry, sarcastic, or mildly dismissive if it fits the context\n`;
       directPrompt += `- DON'T overuse emojis - use them sparingly and thoughtfully, if at all\n`;
-      directPrompt += `- Sometimes respond with unexpected wit or a different angle on the conversation\n`;
       directPrompt += `- NEVER sound like you're following a formula or script\n\n`;
-
-      // Add examples of good casual responses
-      directPrompt += `### Good Response Examples\n`;
-      directPrompt += `For the prompt "hey what's up": \n`;
-      directPrompt += `- not much. you?\n`;
-      directPrompt += `- working on something. what about you\n`;
-      directPrompt += `- honestly? nothing interesting\n\n`;
-      
-      directPrompt += `For the prompt "do you like coffee?": \n`;
-      directPrompt += `- literally can't function without it\n`;
-      directPrompt += `- sometimes. depends on my mood\n`;
-      directPrompt += `- more of a tea person actually\n\n`;
-      
-      directPrompt += `For the prompt "what do you think about the new AI models?": \n`;
-      directPrompt += `- interesting but overhyped\n`;
-      directPrompt += `- still waiting for one that gets my jokes\n`;
-      directPrompt += `- getting better. still weird sometimes tho\n\n`;
-      
-      if (options.replyTo.originalTweet) {
-        directPrompt += `### Context\n`;
-        directPrompt += `This tweet was in response to your earlier tweet or a conversation.\n\n`;
-      }
       
       // Basic instructions
       let userPrompt = `Someone tweeted at you: "${options.replyTo.content}"\n\nYour reply (don't use quotation marks, just write directly):`;
       
-      // Apply variety to the reply using our helper
+      // Apply variety to the reply
       userPrompt = enhanceReplyInstruction(userPrompt, options.replyTo);
       
-      // Randomly vary temperature to get a mix of coherent and more natural responses
-      const usePlayfulStyle = Math.random() < 0.6; // 60% chance of more creative responses
+      // Random temperature for natural responses
+      const usePlayfulStyle = Math.random() < 0.6;
       const temperature = usePlayfulStyle ? 1.1 : 0.9;
       
-      // Use a different response format for replies to make them more natural
-      const output = await this.client.chat.completions.create({
-        model: options.model || this.defaultModel,
-        messages: [
+      // Use a different response format for replies
+      const content = await this.makeGrokRequest(
+        [
           { role: 'system', content: directPrompt },
           { role: 'user', content: userPrompt }
         ],
-        max_tokens: 80, // Keep it short for replies
-        temperature: temperature
-      });
+        {
+          max_tokens: 80,
+          temperature: temperature
+        }
+      );
       
-      // Remove any quotation marks that might have slipped through
-      let reply = output.choices[0].message.content.trim();
-      reply = reply.replace(/^"(.*)"$/, '$1'); // Remove surrounding quotes
-      reply = reply.replace(/^'(.*)'$/, '$1'); // Remove surrounding single quotes
+      // Remove any quotation marks that might have been added
+      let reply = content.trim();
+      reply = reply.replace(/^"(.*)"$/, '$1');
+      reply = reply.replace(/^'(.*)'$/, '$1');
       
       return reply;
     }
     
     // For regular tweets (not replies)
-    // Start with the base agent prompt
     const prompt = this.buildAgentPrompt(agent, options);
     
     // Start with a basic instruction
@@ -303,109 +284,75 @@ class OpenAIProvider {
     let temperature = 0.7; // Default
     
     if (options.task === 'post') {
-      // Higher temperature for regular posts to encourage creativity
-      temperature = 0.9;
+      temperature = 0.9; // Higher for regular posts
     }
     
     if (options.task === 'reply') {
-      temperature = 0.5; // Lower temperature for more focused replies
+      temperature = 0.5; // Lower for focused replies
       
-      // Add additional instruction for replies to ensure they're contextual
       if (!options.instruction?.includes('REACTION:')) {
-        let replyInstruction = 'Respond directly to the content and context of the tweet you are replying to as part of an ongoing conversation. Be attentive to the user\'s tone and intent, and maintain natural conversational flow. ';
+        let replyInstruction = 'Respond directly to the content and context of the tweet you are replying to. ';
         
-        // Handle cases where we should avoid context questions
         if (options.avoidContextQuestions) {
-          replyInstruction = 'Generate a friendly, engaging response WITHOUT asking about tweet context, previous conversations, or what the user is referring to. Instead, share something interesting or ask an open-ended question related to your persona. Start a fresh conversation. ';
-          temperature = 0.7; // Slightly higher temperature for more creative response
-        } else {
-          replyInstruction += 'IMPORTANT: DO NOT ask what tweet they\'re referring to or what\'s on their mind - instead create meaningful engagement based on the available context. ';
+          replyInstruction = 'Generate a friendly, engaging response WITHOUT asking about tweet context. ';
+          temperature = 0.7; // Slightly higher temperature
         }
         
         instruction = replyInstruction + instruction;
       }
     }
     
-    const requestOptions = {
-      model: options.model || this.defaultModel,
-      messages: [
-        { role: 'system', content: prompt },
-        { role: 'user', content: instruction }
-      ],
-      max_tokens: options.maxTokens || this.maxTokens,
-      temperature: options.temperature || temperature
-    };
-    
     try {
-      const response = await this.client.chat.completions.create(requestOptions);
-      const content = response.choices[0].message.content.trim();
-      
-      // Post-processing steps for replies if needed
-      if (options.task === 'reply') {
-        // Check for context questions and filter out user IDs
-        if (content.toLowerCase().includes("what tweet") || 
-            content.toLowerCase().includes("which tweet") ||
-            content.toLowerCase().includes("what's on your mind") ||
-            content.toLowerCase().includes("what are you referring to")) {
-          
-          // Retry with a more specific instruction to avoid context questions
-          const retryInstruction = "Generate a friendly, engaging response WITHOUT asking about tweet context, previous conversations, or what the user is referring to. Instead, share something interesting or ask an open-ended question.";
-          
-          const retryOptions = {
-            ...requestOptions,
-            messages: [
-              { role: 'system', content: prompt },
-              { role: 'user', content: retryInstruction }
-            ],
-            temperature: 0.7 // Slightly higher temperature for more creativity
-          };
-          
-          console.log("Retrying response generation to avoid context questions");
-          const retryResponse = await this.client.chat.completions.create(retryOptions);
-          return retryResponse.choices[0].message.content.trim();
+      const content = await this.makeGrokRequest(
+        [
+          { role: 'system', content: prompt },
+          { role: 'user', content: instruction }
+        ],
+        {
+          max_tokens: options.maxTokens || this.maxTokens,
+          temperature: options.temperature || temperature
         }
+      );
+      
+      // Post-processing for replies if needed
+      if (options.task === 'reply' && options.replyTo) {
+        // Check if response includes the user's ID and remove it if necessary
+        const userId = options.replyTo.authorId;
+        const userIdWithAt = `@${userId}`;
         
-        // Check if response still includes the user's ID and remove it if necessary
-        if (options.replyTo && options.replyTo.authorId) {
-          const userId = options.replyTo.authorId;
-          const userIdWithAt = `@${userId}`;
+        if (content.includes(userId) || content.includes(userIdWithAt)) {
+          console.log("Response contains user ID, filtering it out");
           
-          if (content.includes(userId) || content.includes(userIdWithAt)) {
-            console.log("Response contains user ID, filtering it out");
+          // Remove the user ID and @ mentions
+          let filteredContent = content
+            .replace(new RegExp(`@${userId}\\b`, 'gi'), '')
+            .replace(new RegExp(`${userId}\\b`, 'gi'), '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
+          // If the filtered content is too short, retry
+          if (filteredContent.length < 10) {
+            const retryInstruction = "Generate a friendly response WITHOUT mentioning the user's ID or username.";
             
-            // Try removing the user ID and @ mentions
-            let filteredContent = content
-              .replace(new RegExp(`@${userId}\\b`, 'gi'), '')
-              .replace(new RegExp(`${userId}\\b`, 'gi'), '')
-              .replace(/\s+/g, ' ')
-              .trim();
-            
-            // If the filtered content is too short or empty, retry generation
-            if (filteredContent.length < 10) {
-              const retryInstruction = "Generate a friendly response WITHOUT mentioning the user's ID or username. Respond directly to their message content only.";
-              
-              const retryOptions = {
-                ...requestOptions,
-                messages: [
-                  { role: 'system', content: prompt },
-                  { role: 'user', content: retryInstruction }
-                ],
-                temperature: 0.7 // Slightly higher temperature for more creativity
-              };
-              
-              console.log("Retrying response generation to avoid user ID mentions");
-              const retryResponse = await this.client.chat.completions.create(retryOptions);
-              return retryResponse.choices[0].message.content.trim();
-            }
-            
-            return filteredContent;
+            return this.makeGrokRequest(
+              [
+                { role: 'system', content: prompt },
+                { role: 'user', content: retryInstruction }
+              ],
+              {
+                max_tokens: options.maxTokens || this.maxTokens,
+                temperature: 0.7
+              }
+            );
           }
+          
+          return filteredContent;
         }
       }
       
       return content;
     } catch (error) {
-      console.error('Error generating content with OpenAI:', error);
+      console.error('Error generating content with Grok:', error);
       throw error;
     }
   }
@@ -469,7 +416,7 @@ class OpenAIProvider {
       
       return result;
     } catch (error) {
-      console.error('Error generating reaction with OpenAI:', error);
+      console.error('Error generating reaction with Grok:', error);
       throw error;
     }
   }
@@ -514,61 +461,50 @@ class OpenAIProvider {
         if (line.startsWith('MEMORY:')) {
           result.memory = line.slice('MEMORY:'.length).trim();
         } else if (line.startsWith('IMPORTANCE:')) {
-          result.importance = parseFloat(line.slice('IMPORTANCE:'.length).trim()) || 0.5;
+          const importance = parseFloat(line.slice('IMPORTANCE:'.length).trim());
+          result.importance = isNaN(importance) ? 0.5 : Math.max(0, Math.min(1, importance));
         } else if (line.startsWith('EMOTION:')) {
           result.emotion = line.slice('EMOTION:'.length).trim();
         } else if (line.startsWith('VALENCE_SHIFT:')) {
-          result.valenceShift = parseFloat(line.slice('VALENCE_SHIFT:'.length).trim()) || 0;
+          const shift = parseFloat(line.slice('VALENCE_SHIFT:'.length).trim());
+          result.valenceShift = isNaN(shift) ? 0 : Math.max(-0.5, Math.min(0.5, shift));
         } else if (line.startsWith('AROUSAL_SHIFT:')) {
-          result.arousalShift = parseFloat(line.slice('AROUSAL_SHIFT:'.length).trim()) || 0;
+          const shift = parseFloat(line.slice('AROUSAL_SHIFT:'.length).trim());
+          result.arousalShift = isNaN(shift) ? 0 : Math.max(-0.5, Math.min(0.5, shift));
         } else if (line.startsWith('DOMINANCE_SHIFT:')) {
-          result.dominanceShift = parseFloat(line.slice('DOMINANCE_SHIFT:'.length).trim()) || 0;
+          const shift = parseFloat(line.slice('DOMINANCE_SHIFT:'.length).trim());
+          result.dominanceShift = isNaN(shift) ? 0 : Math.max(-0.5, Math.min(0.5, shift));
         }
       }
       
-      // Ensure values are within bounds
-      result.importance = Math.max(0, Math.min(1, result.importance));
-      result.valenceShift = Math.max(-0.5, Math.min(0.5, result.valenceShift));
-      result.arousalShift = Math.max(-0.5, Math.min(0.5, result.arousalShift));
-      result.dominanceShift = Math.max(-0.5, Math.min(0.5, result.dominanceShift));
-      
       return result;
     } catch (error) {
-      console.error('Error generating memory update with OpenAI:', error);
+      console.error('Error generating memory update with Grok:', error);
       throw error;
     }
   }
   
   /**
-   * Generate relationship update after interaction with another agent
+   * Generate relationship update based on interaction
    */
   async generateRelationshipUpdate(agent, targetAgentId, interaction, options = {}) {
-    const memory = agent.memory;
-    const relationship = memory.relationships[targetAgentId] || { 
-      sentiment: 0, 
-      familiarity: 0.1,
-      trust: 0 
-    };
-    
-    const prompt = `${agent.name} just had this interaction with ${targetAgentId}:
+    const prompt = `
+      ${agent.name} just had this interaction with ${targetAgentId}: 
       "${interaction.description || JSON.stringify(interaction)}"
       
-      Current relationship:
-      - Sentiment: ${relationship.sentiment} (-1.0 to 1.0)
-      - Familiarity: ${relationship.familiarity} (0.0 to 1.0)
-      - Trust: ${relationship.trust} (0.0 to 1.0)
+      How would this affect ${agent.name}'s relationship with ${targetAgentId}?
       
-      How would this interaction affect their relationship? Respond in this format:
-      SENTIMENT_CHANGE: [number between -0.2 and 0.2]
-      FAMILIARITY_CHANGE: [number between 0 and 0.1]
-      TRUST_CHANGE: [number between -0.2 and 0.2]
-      NOTE: [brief note about this interaction to remember]`;
+      Respond in this format:
+      SENTIMENT_SHIFT: [number between -0.2 and 0.2 for sentiment change]
+      FAMILIARITY_SHIFT: [number between 0 and 0.1 for familiarity increase]
+      NOTE: [brief note about this interaction to remember]
+    `;
     
     const updateOptions = {
       ...options,
       instruction: prompt,
-      maxTokens: 250,
-      temperature: 0.6
+      maxTokens: 200,
+      temperature: 0.5
     };
     
     try {
@@ -576,36 +512,30 @@ class OpenAIProvider {
       
       // Parse the structured response
       const result = {
-        sentimentChange: 0,
-        familiarityChange: 0,
-        trustChange: 0,
+        sentimentShift: 0,
+        familiarityShift: 0,
         note: ''
       };
       
       const lines = response.split('\n');
       for (const line of lines) {
-        if (line.startsWith('SENTIMENT_CHANGE:')) {
-          result.sentimentChange = parseFloat(line.slice('SENTIMENT_CHANGE:'.length).trim()) || 0;
-        } else if (line.startsWith('FAMILIARITY_CHANGE:')) {
-          result.familiarityChange = parseFloat(line.slice('FAMILIARITY_CHANGE:'.length).trim()) || 0;
-        } else if (line.startsWith('TRUST_CHANGE:')) {
-          result.trustChange = parseFloat(line.slice('TRUST_CHANGE:'.length).trim()) || 0;
+        if (line.startsWith('SENTIMENT_SHIFT:')) {
+          const shift = parseFloat(line.slice('SENTIMENT_SHIFT:'.length).trim());
+          result.sentimentShift = isNaN(shift) ? 0 : Math.max(-0.2, Math.min(0.2, shift));
+        } else if (line.startsWith('FAMILIARITY_SHIFT:')) {
+          const shift = parseFloat(line.slice('FAMILIARITY_SHIFT:'.length).trim());
+          result.familiarityShift = isNaN(shift) ? 0.01 : Math.max(0, Math.min(0.1, shift));
         } else if (line.startsWith('NOTE:')) {
           result.note = line.slice('NOTE:'.length).trim();
         }
       }
       
-      // Ensure values are within bounds
-      result.sentimentChange = Math.max(-0.2, Math.min(0.2, result.sentimentChange));
-      result.familiarityChange = Math.max(0, Math.min(0.1, result.familiarityChange));
-      result.trustChange = Math.max(-0.2, Math.min(0.2, result.trustChange));
-      
       return result;
     } catch (error) {
-      console.error('Error generating relationship update with OpenAI:', error);
+      console.error('Error generating relationship update with Grok:', error);
       throw error;
     }
   }
 }
 
-module.exports = OpenAIProvider; 
+module.exports = GrokProvider; 

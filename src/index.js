@@ -12,6 +12,7 @@ require('dotenv').config();
 const MemoryManager = require('./memory/memory-manager');
 const TwitterAdapter = require('./twitter/twitter-adapter');
 const OpenAIProvider = require('./llm/openai-provider');
+const GrokProvider = require('./llm/grok-provider');
 const EventEngine = require('./events/event-engine');
 const AgentManager = require('./agents/agent-manager');
 const ApiServer = require('./api/api-server');
@@ -63,12 +64,23 @@ async function initializePuppetEngine() {
     
     logger.info('Twitter client initialized');
     
-    // Create LLM provider
-    const llmProvider = new OpenAIProvider({
-      apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || 'gpt-4-turbo'
-    });
-    logger.info('LLM provider initialized');
+    // Initialize LLM providers
+    const llmProviders = {
+      openai: new OpenAIProvider({
+        apiKey: process.env.OPENAI_API_KEY,
+        model: process.env.OPENAI_MODEL || 'gpt-4-turbo'
+      }),
+      grok: new GrokProvider({
+        apiKey: process.env.GROK_API_KEY,
+        apiEndpoint: process.env.GROK_API_ENDPOINT,
+        model: process.env.GROK_MODEL || 'grok-1'
+      })
+    };
+    
+    // Default to OpenAI if not specified
+    const defaultLLMProvider = llmProviders.openai;
+    
+    logger.info('LLM providers initialized');
     
     // Create memory manager
     const memoryManager = new MemoryManager({
@@ -83,7 +95,8 @@ async function initializePuppetEngine() {
     // Create agent manager
     const agentManager = new AgentManager({
       memoryManager,
-      llmProvider,
+      llmProvider: defaultLLMProvider,
+      llmProviders,
       twitterClient: twitterAdapter,
       eventEngine
     });
@@ -103,8 +116,8 @@ async function initializePuppetEngine() {
     // Start API server
     await apiServer.start();
     
-    // Start monitoring Twitter for mentions
-    await agentManager.startMonitoringMentions(60000); // Hardcoded to 60 seconds
+    // Start real-time streaming for Twitter mentions
+    await agentManager.startStreamingMentions();
     
     // Set up periodic events
     const agentIds = Object.keys(agentManager.agents);
@@ -117,7 +130,7 @@ async function initializePuppetEngine() {
     // Return the initialized components
     return {
       twitterClient: twitterAdapter,
-      llmProvider,
+      llmProviders,
       memoryManager,
       eventEngine,
       agentManager,

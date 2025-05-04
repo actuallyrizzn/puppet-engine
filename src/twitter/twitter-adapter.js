@@ -14,7 +14,13 @@ class TwitterAdapter {
   constructor(options = {}) {
     console.log('Using official Twitter API client');
     this.client = new TwitterClient({
-      credentials: options.apiCredentials
+      credentials: {
+        apiKey: options.apiCredentials?.apiKey,
+        apiKeySecret: options.apiCredentials?.apiKeySecret,
+        accessToken: options.apiCredentials?.accessToken,
+        accessTokenSecret: options.apiCredentials?.accessTokenSecret,
+        bearerToken: options.apiCredentials?.bearerToken
+      }
     });
   }
   
@@ -75,10 +81,23 @@ class TwitterAdapter {
   }
   
   /**
+   * Start streaming mentions for an agent in real-time
+   * @param {string} agentId - The ID of the agent to stream mentions for
+   * @param {function} onMention - Callback function to handle each mention
+   * @param {Object} options - Additional options
+   * @returns {Object} - Stream connection object
+   */
+  async startMentionStream(agentId, onMention, options = {}) {
+    return this.client.startMentionStream(agentId, onMention, options);
+  }
+  
+  /**
    * Cleanup resources
    */
   async close() {
-    // No cleanup needed for the official API client
+    if (this.client && typeof this.client.close === 'function') {
+      await this.client.close();
+    }
     return;
   }
 }
