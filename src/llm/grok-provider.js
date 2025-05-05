@@ -23,94 +23,152 @@ class GrokProvider {
   buildAgentPrompt(agent, options = {}) {
     const { personality, styleGuide, memory } = agent;
     
+    let context = "";
+
     // Custom system prompt override if provided
-    if (options.customSystemPrompt) {
-      return options.customSystemPrompt;
-    }
-    
-    // Context setup
-    let context = `You are ${agent.name}, ${agent.description}.\n\n`;
-    
-    // Personality traits
-    context += "### Personality\n";
-    context += `- Traits: ${personality.traits.join(', ')}\n`;
-    context += `- Values: ${personality.values.join(', ')}\n`;
-    context += `- Speaking style: ${personality.speakingStyle}\n`;
-    context += `- Interests: ${personality.interests.join(', ')}\n\n`;
-    
-    // Style guide
-    context += "### Style Guide\n";
-    context += `- Voice: ${styleGuide.voice}\n`;
-    context += `- Tone: ${styleGuide.tone}\n`;
-    context += `- Formatting preferences:\n`;
-    context += `  - Hashtags: ${styleGuide.formatting.usesHashtags ? 'Yes' : 'No'}, ${styleGuide.formatting.hashtagStyle}\n`;
-    context += `  - Emojis: ${styleGuide.formatting.usesEmojis ? 'Yes' : 'No'}, ${styleGuide.formatting.emojiFrequency}\n`;
-    context += `  - Capitalization: ${styleGuide.formatting.capitalization}\n`;
-    context += `  - Sentence length: ${styleGuide.formatting.sentenceLength}\n`;
-    context += `- Topics to avoid: ${styleGuide.topicsToAvoid.join(', ')}\n\n`;
-    
-    // Current mood
-    context += "### Current Mood\n";
-    context += `- Emotional valence: ${agent.currentMood.valence > 0 ? 'Positive' : agent.currentMood.valence < 0 ? 'Negative' : 'Neutral'} (${agent.currentMood.valence})\n`;
-    context += `- Arousal: ${agent.currentMood.arousal > 0.7 ? 'Excited' : agent.currentMood.arousal < 0.3 ? 'Calm' : 'Moderate'} (${agent.currentMood.arousal})\n`;
-    context += `- Dominance: ${agent.currentMood.dominance > 0.7 ? 'Dominant' : agent.currentMood.dominance < 0.3 ? 'Submissive' : 'Neutral'} (${agent.currentMood.dominance})\n\n`;
-    
-    // Core memories
-    context += "### Core Memories\n";
-    memory.coreMemories.forEach(item => {
-      context += `- ${item.content}\n`;
-    });
-    context += "\n";
-    
-    // Recent events if available
-    if (memory.recentEvents.length > 0) {
-      context += "### Recent Events\n";
-      memory.recentEvents
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 5)
-        .forEach(item => {
-          context += `- ${item.content}\n`;
-        });
-      context += "\n";
-    }
-    
-    // Recent posts if available
-    if (memory.recentPosts.length > 0) {
-      context += "### Recent Posts\n";
-      memory.recentPosts
-        .sort((a, b) => b.timestamp - a.timestamp)
-        .slice(0, 3)
-        .forEach(item => {
-          context += `- ${item.content}\n`;
-        });
-      context += "\n";
-    }
-    
-    // Relevant relationships if available
-    if (Object.keys(memory.relationships).length > 0) {
-      context += "### Important Relationships\n";
+    if (options.customSystemPrompt || agent.customSystemPrompt) {
+      context = options.customSystemPrompt || agent.customSystemPrompt;
       
-      Object.values(memory.relationships)
-        .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
-        .slice(0, 5)
-        .forEach(rel => {
-          const sentimentDesc = rel.sentiment > 0.5 ? 'Strongly positive' : 
-                               rel.sentiment > 0 ? 'Positive' :
-                               rel.sentiment < -0.5 ? 'Strongly negative' :
-                               rel.sentiment < 0 ? 'Negative' : 'Neutral';
-          
-          context += `- ${rel.targetAgentId}: ${sentimentDesc} (${rel.sentiment.toFixed(1)}), Familiarity: ${rel.familiarity.toFixed(1)}\n`;
-          
-          if (rel.notes && rel.notes.length > 0) {
-            context += `  - Note: ${rel.notes[0]}\n`;
-          }
+      // Add memory section after the custom prompt
+      context += "\n\n### MEMORY INFORMATION\n";
+      
+      // Core memories
+      context += "\n### Core Memories\n";
+      if (memory.coreMemories && memory.coreMemories.length > 0) {
+        memory.coreMemories.forEach(item => {
+          context += `- ${item.content}\n`;
         });
+      } else {
+        context += "- No core memories yet\n";
+      }
+      
+      // Recent events if available
+      if (memory.recentEvents && memory.recentEvents.length > 0) {
+        context += "\n### Recent Events\n";
+        memory.recentEvents
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 5)
+          .forEach(item => {
+            context += `- ${item.content}\n`;
+          });
+      }
+      
+      // Recent posts if available
+      if (memory.recentPosts && memory.recentPosts.length > 0) {
+        context += "\n### Recent Posts\n";
+        memory.recentPosts
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 3)
+          .forEach(item => {
+            context += `- ${item.content}\n`;
+          });
+      }
+      
+      // Relevant relationships if available
+      if (memory.relationships && Object.keys(memory.relationships).length > 0) {
+        context += "\n### Important Relationships\n";
+        
+        Object.values(memory.relationships)
+          .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
+          .slice(0, 5)
+          .forEach(rel => {
+            const sentimentDesc = rel.sentiment > 0.5 ? 'Strongly positive' : 
+                                rel.sentiment > 0 ? 'Positive' :
+                                rel.sentiment < -0.5 ? 'Strongly negative' :
+                                rel.sentiment < 0 ? 'Negative' : 'Neutral';
+            
+            context += `- ${rel.targetAgentId}: ${sentimentDesc} (${rel.sentiment.toFixed(1)}), Familiarity: ${rel.familiarity.toFixed(1)}\n`;
+            
+            if (rel.notes && rel.notes.length > 0) {
+              context += `  - Note: ${rel.notes[0]}\n`;
+            }
+          });
+      }
+    } else {
+      // Context setup
+      context = `You are ${agent.name}, ${agent.description}.\n\n`;
+      
+      // Personality traits
+      context += "### Personality\n";
+      context += `- Traits: ${personality.traits.join(', ')}\n`;
+      context += `- Values: ${personality.values.join(', ')}\n`;
+      context += `- Speaking style: ${personality.speakingStyle}\n`;
+      context += `- Interests: ${personality.interests.join(', ')}\n\n`;
+      
+      // Style guide
+      context += "### Style Guide\n";
+      context += `- Voice: ${styleGuide.voice}\n`;
+      context += `- Tone: ${styleGuide.tone}\n`;
+      context += `- Formatting preferences:\n`;
+      context += `  - Hashtags: ${styleGuide.formatting.usesHashtags ? 'Yes' : 'No'}, ${styleGuide.formatting.hashtagStyle}\n`;
+      context += `  - Emojis: ${styleGuide.formatting.usesEmojis ? 'Yes' : 'No'}, ${styleGuide.formatting.emojiFrequency}\n`;
+      context += `  - Capitalization: ${styleGuide.formatting.capitalization}\n`;
+      context += `  - Sentence length: ${styleGuide.formatting.sentenceLength}\n`;
+      context += `- Topics to avoid: ${styleGuide.topicsToAvoid.join(', ')}\n\n`;
+      
+      // Current mood
+      context += "### Current Mood\n";
+      context += `- Emotional valence: ${agent.currentMood.valence > 0 ? 'Positive' : agent.currentMood.valence < 0 ? 'Negative' : 'Neutral'} (${agent.currentMood.valence})\n`;
+      context += `- Arousal: ${agent.currentMood.arousal > 0.7 ? 'Excited' : agent.currentMood.arousal < 0.3 ? 'Calm' : 'Moderate'} (${agent.currentMood.arousal})\n`;
+      context += `- Dominance: ${agent.currentMood.dominance > 0.7 ? 'Dominant' : agent.currentMood.dominance < 0.3 ? 'Submissive' : 'Neutral'} (${agent.currentMood.dominance})\n\n`;
+      
+      // Core memories
+      context += "### Core Memories\n";
+      memory.coreMemories.forEach(item => {
+        context += `- ${item.content}\n`;
+      });
       context += "\n";
+      
+      // Recent events if available
+      if (memory.recentEvents.length > 0) {
+        context += "### Recent Events\n";
+        memory.recentEvents
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 5)
+          .forEach(item => {
+            context += `- ${item.content}\n`;
+          });
+        context += "\n";
+      }
+      
+      // Recent posts if available
+      if (memory.recentPosts.length > 0) {
+        context += "### Recent Posts\n";
+        memory.recentPosts
+          .sort((a, b) => b.timestamp - a.timestamp)
+          .slice(0, 3)
+          .forEach(item => {
+            context += `- ${item.content}\n`;
+          });
+        context += "\n";
+      }
+      
+      // Relevant relationships if available
+      if (Object.keys(memory.relationships).length > 0) {
+        context += "### Important Relationships\n";
+        
+        Object.values(memory.relationships)
+          .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
+          .slice(0, 5)
+          .forEach(rel => {
+            const sentimentDesc = rel.sentiment > 0.5 ? 'Strongly positive' : 
+                                rel.sentiment > 0 ? 'Positive' :
+                                rel.sentiment < -0.5 ? 'Strongly negative' :
+                                rel.sentiment < 0 ? 'Negative' : 'Neutral';
+            
+            context += `- ${rel.targetAgentId}: ${sentimentDesc} (${rel.sentiment.toFixed(1)}), Familiarity: ${rel.familiarity.toFixed(1)}\n`;
+            
+            if (rel.notes && rel.notes.length > 0) {
+              context += `  - Note: ${rel.notes[0]}\n`;
+            }
+          });
+        context += "\n";
+      }
     }
     
     // Content generation task
     if (options.task === 'reply' && options.replyTo) {
-      context += "### Task: Reply to a Tweet\n";
+      context += "\n### Task: Reply to a Tweet\n";
       context += `You are replying to this tweet: "${options.replyTo.content}" from user ${options.replyTo.authorId}.\n\n`;
       
       // Add conversation history if available
@@ -137,8 +195,10 @@ class GrokProvider {
           context += `IMPORTANT: You are now responding to the latest message from ${options.replyTo.authorId}: "${mostRecent.content}"\n\n`;
         }
         
-        context += `IMPORTANT: Your reply MUST continue this conversation naturally.\n\n`;
-        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response.\n\n`;
+        context += `IMPORTANT: Your reply MUST continue this conversation naturally. Directly address the most recent message from ${options.replyTo.authorId} while maintaining awareness of the entire conversation context.\n\n`;
+        context += `Maintain natural conversational flow as if this is an ongoing dialogue. When appropriate, reference earlier parts of the conversation to show continuity.\n\n`;
+        context += `DO NOT ask for clarification about which tweet or context is being discussed. You have the complete conversation thread above.\n\n`;
+        context += `CRITICAL: DO NOT include or mention the user's ID (${options.replyTo.authorId}) in your response. Respond as if in a normal conversation without mentioning their username or ID.\n\n`;
       }
       // Add original tweet context if available but no conversation history
       else if (options.replyTo.originalTweet && options.replyTo.originalTweet.id !== options.replyTo.id) {
@@ -157,7 +217,7 @@ class GrokProvider {
         context += `Your relationship with this user: Sentiment ${rel.sentiment.toFixed(1)}, Familiarity ${rel.familiarity.toFixed(1)}.\n\n`;
       }
     } else if (options.task === 'quote_tweet' && options.quoteTweet) {
-      context += "### Task: Quote Tweet\n";
+      context += "\n### Task: Quote Tweet\n";
       context += `You are quote-tweeting this: "${options.quoteTweet.content}" from user ${options.quoteTweet.authorId}.\n\n`;
       
       // Add relationship context if available
@@ -166,10 +226,10 @@ class GrokProvider {
         context += `Your relationship with this user: Sentiment ${rel.sentiment.toFixed(1)}, Familiarity ${rel.familiarity.toFixed(1)}.\n\n`;
       }
     } else if (options.task === 'thread') {
-      context += "### Task: Create a Thread\n";
+      context += "\n### Task: Create a Thread\n";
       context += `Create a thread of ${options.threadLength || 'several'} tweets about ${options.topic || 'a topic of your choice'}.\n\n`;
     } else {
-      context += "### Task: Create a New Tweet\n";
+      context += "\n### Task: Create a New Tweet\n";
       
       if (options.topic) {
         context += `Create a tweet about: ${options.topic}\n\n`;

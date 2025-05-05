@@ -107,6 +107,35 @@ class ApiServer {
       }
     });
     
+    // DEBUG: Get agent prompt context
+    this.app.get('/api/agents/:agentId/context', (req, res) => {
+      try {
+        const agentId = req.params.agentId;
+        const agent = this.agentManager.getAgent(agentId);
+        
+        // Get the LLM provider for this agent
+        const llmProvider = this.agentManager.agentLLMProviders[agentId] || this.agentManager.defaultLLMProvider;
+        
+        // Build context with agent's custom system prompt
+        const context = llmProvider.buildAgentPrompt(agent, {
+          task: 'post',
+          topic: 'Sample topic for debug purposes'
+        });
+        
+        // Print to server console for debugging
+        console.log("=== AGENT CONTEXT START ===");
+        console.log(context);
+        console.log("=== AGENT CONTEXT END ===");
+        
+        res.json({ 
+          context,
+          hasCustomPrompt: !!agent.customSystemPrompt
+        });
+      } catch (error) {
+        res.status(404).json({ error: error.message });
+      }
+    });
+    
     // Trigger agent to create a post
     this.app.post('/api/agents/:agentId/post', async (req, res) => {
       try {

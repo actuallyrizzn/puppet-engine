@@ -6,7 +6,13 @@
   "scripts": {
     "start": "node src/index.js",
     "dev": "nodemon src/index.js",
-    "test": "jest"
+    "test": "jest",
+    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:stop": "pm2 stop puppet-engine",
+    "pm2:restart": "pm2 restart puppet-engine",
+    "pm2:status": "pm2 status",
+    "pm2:logs": "pm2 logs",
+    "pm2:monit": "pm2 monit"
   },
   "dependencies": {
     "@jup-ag/api": "^6.0.41",
