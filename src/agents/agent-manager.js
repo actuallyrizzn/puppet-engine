@@ -320,100 +320,87 @@ class AgentManager {
         return null;
       }
       
-      // Get custom system prompt from agent config or environment
-      let customSystemPrompt = null;
-      
-      // First check if agent has a custom system prompt
-      if (agent.customSystemPrompt) {
-        customSystemPrompt = agent.customSystemPrompt;
-        console.log(`Using custom system prompt from agent config for ${agentId}`);
-      }
-      // Fall back to environment variable if needed
-      else if (process.env.CUSTOM_SYSTEM_PROMPT) {
-        customSystemPrompt = process.env.CUSTOM_SYSTEM_PROMPT;
-        console.log(`Using custom system prompt from environment for ${agentId}`);
-      }
-      
-      // Randomize content preferences to add variety
-      const contentPreferences = behaviorRandomizer.randomizeContentPreferences(
-        agent.behavior.contentPreferences
-      );
-      
-      // Create a shallow copy of the agent with randomized content preferences
-      const agentWithRandomPrefs = { 
-        ...agent,
-        behavior: {
-          ...agent.behavior,
-          contentPreferences,
-          interactionPatterns: behaviorRandomizer.randomizeInteractionPatterns(
-            agent.behavior.interactionPatterns
-          )
-        }
-      };
-      
-      // Get the appropriate LLM provider for this agent
+      // Get the agent's LLM provider
       const llmProvider = this.getLLMProviderForAgent(agentId);
-      
-      // Generate content using LLM
-      const postContent = await llmProvider.generateContent(agentWithRandomPrefs, {
-        task: options.task || 'post',
-        topic: options.topic,
-        replyTo: options.replyTo,
-        quoteTweet: options.quoteTweet,
-        threadLength: options.threadLength,
-        customSystemPrompt: customSystemPrompt
-      });
-      
-      // Handle thread creation
-      if (options.threadLength && options.threadLength > 1) {
-        const threadContent = postContent.split('\n\n')
-          .filter(text => text.trim().length > 0)
-          .slice(0, options.threadLength);
-        
-        // Post the thread
-        const tweets = await this.twitterClient.postThread(agentId, threadContent);
-        
-        // Record in memory
-        tweets.forEach(tweet => {
-          this.memoryManager.recordPost(agentId, tweet.content, tweet.id, {
-            isThread: true,
-            threadIds: tweets.map(t => t.id)
-          });
-        });
-        
-        // Update last post time
-        agent.lastPostTime = now;
-        
-        return tweets;
-      } else {
-        // Post as a single tweet
-        const tweetOptions = {};
-        
-        if (options.replyTo) {
-          tweetOptions.replyToTweetId = options.replyTo.id;
-        } else if (options.quoteTweet) {
-          tweetOptions.quoteTweetId = options.quoteTweet.id;
-        }
-        
-        // Send the tweet
-        const tweet = await this.twitterClient.postTweet(agentId, postContent, tweetOptions);
-        
-        // Record in memory
-        this.memoryManager.recordPost(agentId, tweet.content, tweet.id, {
-          isReply: !!options.replyTo,
-          isQuote: !!options.quoteTweet
-        });
-        
-        // Update last post time
-        agent.lastPostTime = now;
-        
-        // Schedule next post after a successful post
-        if (!options.replyTo && !options.quoteTweet) {
-          this.scheduleNextPost(agentId);
-        }
-        
-        return tweet;
+      if (!llmProvider) {
+        throw new Error(`LLM provider '${agent.llm_provider}' not found for agent ${agentId}`);
       }
+      
+      let content = '';
+      
+      if (options.task === 'reply' && options.replyTo) {
+        // For replies, use the reply-specific method
+        content = await llmProvider.generateContent(agent, {
+          task: 'reply',
+          replyTo: options.replyTo,
+          avoidContextQuestions: options.avoidContextQuestions
+        });
+        
+        // Double check to ensure no @mentions are included in replies
+        content = content.replace(/@\w+\s?/g, '');
+      } else {
+        // For new tweets, use direct generateTweet method with minimal overhead
+        // This approach lets the custom system prompt shine through
+        
+        // If we're using Coby agent, use the enhanced direct approach
+        if (agentId === 'coby-agent') {
+          // Use the custom system prompt directly as the user prompt
+          // This bypasses any wrapper logic and sends the prompt straight to the model
+          const userPrompt = agent.customSystemPrompt;
+          
+          content = await llmProvider.generateTweet(agent, userPrompt);
+        } else {
+          // For other agents, use a simpler approach that still preserves their personality
+          content = await llmProvider.generateTweet(agent);
+        }
+      }
+      
+      // Post-processing to ensure style compliance
+      // Enforce lowercase for Coby's tweets
+      if (agentId === 'coby-agent') {
+        content = content.toLowerCase();
+      }
+      
+      // Post to Twitter if client is available
+      let tweetId = null;
+      if (this.twitterClient) {
+        try {
+          // For replies, use replyToTweetId
+          const tweetOptions = {};
+          if (options.task === 'reply' && options.replyTo && options.replyTo.id) {
+            tweetOptions.replyToTweetId = options.replyTo.id;
+          }
+          
+          const tweet = await this.twitterClient.postTweet(agentId, content, tweetOptions);
+          tweetId = tweet.id;
+          
+          if (options.task === 'reply') {
+            console.log(`Posted reply for ${agentId}: ${content}`);
+          } else {
+            console.log(`Posted tweet for ${agentId}: ${content}`);
+          }
+        } catch (tweetError) {
+          console.error(`Error posting tweet for ${agentId}:`, tweetError);
+        }
+      }
+      
+      // Track the post for the agent
+      agent.lastPostTime = now;
+      
+      // Store tweet in memory if memory manager is available
+      if (this.memoryManager) {
+        this.memoryManager.addTweetToAgentMemory(agentId, { 
+          content, 
+          timestamp: now, 
+          id: tweetId,
+          isReply: options.task === 'reply'
+        });
+      }
+      
+      // Schedule the next post
+      this.scheduleNextPost(agentId);
+      
+      return { content, agentId, tweetId };
     } catch (error) {
       console.error(`Error creating post for agent ${agentId}:`, error);
       throw error;
@@ -981,18 +968,22 @@ class AgentManager {
                                   mention.authorUsername.toLowerCase() === agentUsername;
             
             if (isSelfMention) {
-              console.log(`Skipping self-mention from ${mention.authorUsername}`);
               return false;
             }
             
             // Also filter out tweets we've already processed
             if (this.processedTweetIds.has(mention.id)) {
-              console.log(`Skipping already processed mention ${mention.id}`);
               return false;
             }
             
             return true;
           });
+          
+          // Log a summary instead of individual skipped mentions
+          const skippedCount = mentions.length - filteredMentions.length;
+          if (skippedCount > 0) {
+            console.log(`Skipped ${skippedCount} already processed or self mentions`);
+          }
           
           console.log(`Processing ${filteredMentions.length} mentions after filtering out self-mentions and already processed tweets`);
           

@@ -16,6 +16,8 @@ const GrokProvider = require('./llm/grok-provider');
 const EventEngine = require('./events/event-engine');
 const AgentManager = require('./agents/agent-manager');
 const ApiServer = require('./api/api-server');
+const PumpFunTokenManager = require('./solana/pumpfun-token-manager');
+const db = require('./utils/database');
 
 // Utilities
 const winston = require('winston');
@@ -51,6 +53,17 @@ async function initializePuppetEngine() {
   logger.info('Starting Puppet Engine...');
   
   try {
+    // Initialize MongoDB
+    let mongoDbConnected = false;
+    try {
+      await db.connectToDatabase();
+      mongoDbConnected = true;
+      logger.info('Successfully connected to MongoDB');
+    } catch (mongoError) {
+      logger.error('Failed to connect to MongoDB, falling back to file storage:', mongoError);
+      mongoDbConnected = false;
+    }
+    
     // Create Twitter adapter with the API client
     const twitterAdapter = new TwitterAdapter({
       apiCredentials: {
@@ -84,7 +97,8 @@ async function initializePuppetEngine() {
     
     // Create memory manager
     const memoryManager = new MemoryManager({
-      memoryLimit: parseInt(process.env.DEFAULT_AGENT_MEMORY_LIMIT || '100')
+      memoryLimit: parseInt(process.env.DEFAULT_AGENT_MEMORY_LIMIT || '100'),
+      useMongoDb: mongoDbConnected
     });
     logger.info('Memory manager initialized');
     
@@ -104,6 +118,71 @@ async function initializePuppetEngine() {
     
     // Load agents from configuration
     await agentManager.loadAgents();
+    
+    // Initialize PumpFunTokenManager for Coby agent
+    const pumpFunTokenManager = new PumpFunTokenManager({
+      twitterClient: twitterAdapter,
+      agentManager: agentManager,
+      useMongoDb: mongoDbConnected
+    });
+    logger.info('PumpFunTokenManager initialized');
+    
+    // Schedule token launch for Coby agent if not already launched
+    try {
+      const cobyAgentId = 'coby-agent';
+      if (agentManager.agents[cobyAgentId]) {
+        logger.info('Scheduling token launch for Coby agent...');
+        
+        // Check if token is already launched
+        if (pumpFunTokenManager.tokenLaunched) {
+          logger.info(`Coby already has a token: ${pumpFunTokenManager.tokenMintAddress}`);
+        } 
+        // Check if already scheduled
+        else if (pumpFunTokenManager.isLaunchScheduled()) {
+          logger.info(`Token launch already scheduled for ${cobyAgentId} at ${pumpFunTokenManager.scheduledLaunchTime}`);
+        } 
+        // Schedule the token launch
+        else {
+          // Get delay from environment variable or use random
+          let delayMinutes;
+          if (process.env.TOKEN_LAUNCH_DELAY_MINUTES) {
+            delayMinutes = parseInt(process.env.TOKEN_LAUNCH_DELAY_MINUTES);
+            logger.info(`Using configured TOKEN_LAUNCH_DELAY_MINUTES: ${delayMinutes}`);
+          } else {
+            // Default: Schedule with random delay between 5-15 minutes
+            delayMinutes = Math.floor(Math.random() * 11) + 5;
+            logger.info(`Using random token launch delay: ${delayMinutes} minutes`);
+          }
+          
+          // Determine if we should tweet before launch
+          const tweetBeforeLaunch = process.env.TOKEN_PRELAUNCH_TWEET !== 'false';
+          logger.info(`Tweet about scheduled launch: ${tweetBeforeLaunch ? 'ENABLED' : 'DISABLED'}`);
+          
+          const result = await pumpFunTokenManager.scheduleTokenLaunch(cobyAgentId, delayMinutes, tweetBeforeLaunch);
+          
+          if (result.scheduled) {
+            logger.info(`Successfully scheduled token launch for Coby agent in ${delayMinutes} minutes at ${result.scheduledTime}`);
+            
+            // Add a memory about planning to launch a token
+            const agent = agentManager.agents[cobyAgentId];
+            agent.memory.addMemory(
+              `I'm planning to launch my own token on pump.fun soon`,
+              'core',
+              0.7
+            );
+          } else if (result.alreadyLaunched) {
+            logger.info(`Coby already has a token: ${result.mintAddress}`);
+          } else if (result.alreadyScheduled) {
+            logger.info(`Token launch already scheduled for ${cobyAgentId} at ${result.scheduledTime}`);
+          }
+        }
+      } else {
+        logger.warn('Coby agent not found, skipping token launch scheduling');
+      }
+    } catch (error) {
+      logger.error('Error scheduling token launch for Coby agent:', error);
+      // Continue execution even if token launch scheduling fails
+    }
     
     // Create API server
     const apiServer = new ApiServer({
@@ -134,7 +213,9 @@ async function initializePuppetEngine() {
       memoryManager,
       eventEngine,
       agentManager,
-      apiServer
+      apiServer,
+      pumpFunTokenManager,
+      mongoDbConnected
     };
   } catch (error) {
     logger.error('Error initializing Puppet Engine:', error);
@@ -145,9 +226,12 @@ async function initializePuppetEngine() {
 // Start the engine if this script is run directly
 if (require.main === module) {
   initializePuppetEngine()
-    .then(() => {
+    .then((engine) => {
       logger.info('Puppet Engine started successfully. 🎭');
       logger.info(`API server running on port ${process.env.ENGINE_PORT || 3000}`);
+      logger.info(`MongoDB connection: ${engine.mongoDbConnected ? 'ACTIVE' : 'INACTIVE - using file storage'}`);
+      // Store the engine instance globally for cleanup
+      global.puppetEngine = engine;
     })
     .catch(error => {
       logger.error('Failed to start Puppet Engine:', error);
@@ -160,20 +244,27 @@ process.on('SIGINT', async () => {
   logger.info('Shutting down Puppet Engine...');
   
   // Get the current engine instance
-  const engine = require.main === module ? global.puppetEngine : null;
+  const engine = global.puppetEngine;
   
-  if (engine && engine.twitterClient) {
-    // Clean up resources
-    await engine.twitterClient.close().catch(err => 
-      logger.error('Error closing Twitter client:', err)
-    );
+  if (engine) {
+    // Close the Twitter client
+    if (engine.twitterClient) {
+      await engine.twitterClient.close().catch(err => 
+        logger.error('Error closing Twitter client:', err)
+      );
+    }
+    
+    // Close MongoDB connection
+    try {
+      await db.closeConnection();
+      logger.info('MongoDB connection closed');
+    } catch (err) {
+      logger.error('Error closing MongoDB connection:', err);
+    }
   }
   
   logger.info('Puppet Engine shut down successfully');
   process.exit(0);
 });
-
-// Store the engine instance globally for cleanup
-global.puppetEngine = null;
 
 module.exports = { initializePuppetEngine }; 

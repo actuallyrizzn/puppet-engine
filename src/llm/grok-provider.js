@@ -10,160 +10,101 @@ const { enhanceTweetInstruction, enhanceReplyInstruction } = require('./tweet-va
 class GrokProvider {
   constructor(options = {}) {
     this.apiKey = options.apiKey || process.env.GROK_API_KEY;
-    this.apiEndpoint = options.apiEndpoint || process.env.GROK_API_ENDPOINT || 'https://api.grok.x.com/v1/chat/completions';
+    this.apiEndpoint = options.apiEndpoint || process.env.GROK_API_ENDPOINT || 'https://api.x.ai/v1/chat/completions';
     this.defaultModel = options.model || process.env.GROK_MODEL || 'grok-1';
     this.maxTokens = options.maxTokens || 1024;
     this.temperature = options.temperature || 0.7;
   }
   
   /**
-   * Generate a prompt for the agent based on its persona and context
-   * This function is identical to OpenAI's prompt builder since the prompt structure is the same
+   * Build the base system prompt for an agent
    */
   buildAgentPrompt(agent, options = {}) {
-    const { personality, styleGuide, memory } = agent;
+    // Get the agent's memory
+    const memory = agent.memory;
     
-    let context = "";
-
-    // Custom system prompt override if provided
-    if (options.customSystemPrompt || agent.customSystemPrompt) {
-      context = options.customSystemPrompt || agent.customSystemPrompt;
+    // Start with basic description
+    let context = `You are ${agent.name}, ${agent.description}.\n\n`;
+    
+    // Add personality description
+    context += "### Personality\n";
+    context += `You have these traits: ${agent.personality.traits.join(', ')}\n`;
+    context += `You value: ${agent.personality.values.join(', ')}\n`;
+    context += `Your speaking style: ${agent.personality.speakingStyle}\n`;
+    context += `Your interests include: ${agent.personality.interests.join(', ')}\n\n`;
+    
+    // Add style guide
+    context += "### Style Guide\n";
+    context += `Voice: ${agent.styleGuide.voice}\n`;
+    context += `Tone: ${agent.styleGuide.tone}\n`;
+    
+    // Add formatting preferences
+    context += "### Formatting\n";
+    
+    if (agent.styleGuide.formatting) {
+      const formatting = agent.styleGuide.formatting;
       
-      // Add memory section after the custom prompt
-      context += "\n\n### MEMORY INFORMATION\n";
-      
-      // Core memories
-      context += "\n### Core Memories\n";
-      if (memory.coreMemories && memory.coreMemories.length > 0) {
-        memory.coreMemories.forEach(item => {
-          context += `- ${item.content}\n`;
-        });
+      if (formatting.usesHashtags) {
+        context += `Hashtags: ${formatting.hashtagStyle}\n`;
       } else {
-        context += "- No core memories yet\n";
+        context += "Hashtags: Avoid using hashtags\n";
       }
       
-      // Recent events if available
-      if (memory.recentEvents && memory.recentEvents.length > 0) {
-        context += "\n### Recent Events\n";
-        memory.recentEvents
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, 5)
-          .forEach(item => {
-            context += `- ${item.content}\n`;
-          });
+      if (formatting.usesEmojis) {
+        context += `Emojis: ${formatting.emojiFrequency}\n`;
+      } else {
+        context += "Emojis: Avoid using emojis\n";
       }
       
-      // Recent posts if available
-      if (memory.recentPosts && memory.recentPosts.length > 0) {
-        context += "\n### Recent Posts\n";
-        memory.recentPosts
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, 3)
-          .forEach(item => {
-            context += `- ${item.content}\n`;
-          });
+      context += `Capitalization: ${formatting.capitalization}\n`;
+      context += `Sentence Length: ${formatting.sentenceLength}\n`;
+    }
+    
+    // Add topics to avoid
+    context += "\n### Topics to Avoid\n";
+    context += agent.styleGuide.topicsToAvoid.join('\n');
+    
+    // Get recently tweeted topics to avoid repetition
+    const memoryManager = options.memoryManager;
+    if (memoryManager && agent.id && memoryManager.getRecentTopics) {
+      const recentTopics = memoryManager.getRecentTopics(agent.id, 15);
+      if (recentTopics && recentTopics.length > 0) {
+        context += "\n\n### Recently Used Topics (AVOID REPEATING THESE)\n";
+        context += "IMPORTANT: Do not repeat or reference these topics and words that you've recently tweeted about:\n";
+        context += recentTopics.join(', ');
+        context += "\n\nStrive for variety and freshness in your content instead of repeating these recent topics.";
       }
       
-      // Relevant relationships if available
-      if (memory.relationships && Object.keys(memory.relationships).length > 0) {
-        context += "\n### Important Relationships\n";
-        
-        Object.values(memory.relationships)
-          .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
-          .slice(0, 5)
-          .forEach(rel => {
-            const sentimentDesc = rel.sentiment > 0.5 ? 'Strongly positive' : 
-                                rel.sentiment > 0 ? 'Positive' :
-                                rel.sentiment < -0.5 ? 'Strongly negative' :
-                                rel.sentiment < 0 ? 'Negative' : 'Neutral';
-            
-            context += `- ${rel.targetAgentId}: ${sentimentDesc} (${rel.sentiment.toFixed(1)}), Familiarity: ${rel.familiarity.toFixed(1)}\n`;
-            
-            if (rel.notes && rel.notes.length > 0) {
-              context += `  - Note: ${rel.notes[0]}\n`;
-            }
-          });
+      // Include recent tweets for additional context about what to avoid
+      const recentTweets = memoryManager.getRecentTweets(agent.id, 5);
+      if (recentTweets && recentTweets.length > 0) {
+        context += "\n\n### Your Most Recent Tweets (DO NOT REPEAT THESE TOPICS)\n";
+        context += "IMPORTANT: These are your most recent tweets. DO NOT repeat the same topics, opinions or structures:\n";
+        recentTweets.forEach((tweet, i) => {
+          context += `${i+1}. "${tweet.content}"\n`;
+        });
+        context += "\nYour next tweet should be completely different from these recent ones.";
       }
-    } else {
-      // Context setup
-      context = `You are ${agent.name}, ${agent.description}.\n\n`;
-      
-      // Personality traits
-      context += "### Personality\n";
-      context += `- Traits: ${personality.traits.join(', ')}\n`;
-      context += `- Values: ${personality.values.join(', ')}\n`;
-      context += `- Speaking style: ${personality.speakingStyle}\n`;
-      context += `- Interests: ${personality.interests.join(', ')}\n\n`;
-      
-      // Style guide
-      context += "### Style Guide\n";
-      context += `- Voice: ${styleGuide.voice}\n`;
-      context += `- Tone: ${styleGuide.tone}\n`;
-      context += `- Formatting preferences:\n`;
-      context += `  - Hashtags: ${styleGuide.formatting.usesHashtags ? 'Yes' : 'No'}, ${styleGuide.formatting.hashtagStyle}\n`;
-      context += `  - Emojis: ${styleGuide.formatting.usesEmojis ? 'Yes' : 'No'}, ${styleGuide.formatting.emojiFrequency}\n`;
-      context += `  - Capitalization: ${styleGuide.formatting.capitalization}\n`;
-      context += `  - Sentence length: ${styleGuide.formatting.sentenceLength}\n`;
-      context += `- Topics to avoid: ${styleGuide.topicsToAvoid.join(', ')}\n\n`;
-      
-      // Current mood
-      context += "### Current Mood\n";
-      context += `- Emotional valence: ${agent.currentMood.valence > 0 ? 'Positive' : agent.currentMood.valence < 0 ? 'Negative' : 'Neutral'} (${agent.currentMood.valence})\n`;
-      context += `- Arousal: ${agent.currentMood.arousal > 0.7 ? 'Excited' : agent.currentMood.arousal < 0.3 ? 'Calm' : 'Moderate'} (${agent.currentMood.arousal})\n`;
-      context += `- Dominance: ${agent.currentMood.dominance > 0.7 ? 'Dominant' : agent.currentMood.dominance < 0.3 ? 'Submissive' : 'Neutral'} (${agent.currentMood.dominance})\n\n`;
-      
-      // Core memories
-      context += "### Core Memories\n";
-      memory.coreMemories.forEach(item => {
-        context += `- ${item.content}\n`;
+    }
+    
+    // Add core memories for context
+    context += "\n\n### Core Memories\n";
+    if (memory && memory.coreMemories && memory.coreMemories.length > 0) {
+      memory.coreMemories.forEach((memory, index) => {
+        context += `${index + 1}. ${memory}\n`;
       });
-      context += "\n";
+    } else {
+      context += "No core memories available.\n";
+    }
+    
+    // Add current emotional state if available
+    if (memory && memory.currentMood) {
+      const mood = memory.currentMood;
       
-      // Recent events if available
-      if (memory.recentEvents.length > 0) {
-        context += "### Recent Events\n";
-        memory.recentEvents
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, 5)
-          .forEach(item => {
-            context += `- ${item.content}\n`;
-          });
-        context += "\n";
-      }
-      
-      // Recent posts if available
-      if (memory.recentPosts.length > 0) {
-        context += "### Recent Posts\n";
-        memory.recentPosts
-          .sort((a, b) => b.timestamp - a.timestamp)
-          .slice(0, 3)
-          .forEach(item => {
-            context += `- ${item.content}\n`;
-          });
-        context += "\n";
-      }
-      
-      // Relevant relationships if available
-      if (Object.keys(memory.relationships).length > 0) {
-        context += "### Important Relationships\n";
-        
-        Object.values(memory.relationships)
-          .sort((a, b) => Math.abs(b.sentiment) - Math.abs(a.sentiment))
-          .slice(0, 5)
-          .forEach(rel => {
-            const sentimentDesc = rel.sentiment > 0.5 ? 'Strongly positive' : 
-                                rel.sentiment > 0 ? 'Positive' :
-                                rel.sentiment < -0.5 ? 'Strongly negative' :
-                                rel.sentiment < 0 ? 'Negative' : 'Neutral';
-            
-            context += `- ${rel.targetAgentId}: ${sentimentDesc} (${rel.sentiment.toFixed(1)}), Familiarity: ${rel.familiarity.toFixed(1)}\n`;
-            
-            if (rel.notes && rel.notes.length > 0) {
-              context += `  - Note: ${rel.notes[0]}\n`;
-            }
-          });
-        context += "\n";
-      }
+      context += "\n### Current Emotional State\n";
+      context += `Valence (negativity to positivity): ${mood.valence}\n`;
+      context += `Arousal (calmness to excitement): ${mood.arousal}\n`;
+      context += `Dominance (submissiveness to dominance): ${mood.dominance}\n\n`;
     }
     
     // Content generation task
@@ -278,29 +219,61 @@ class GrokProvider {
   async generateContent(agent, options = {}) {
     // For replies, use a simplified prompt
     if (options.task === 'reply' && options.replyTo) {
-      let directPrompt = `You are ${agent.name}, ${agent.description}.\n\n`;
+      let directPrompt;
       
-      // Add personality traits
-      directPrompt += `### Personality\n`;
-      directPrompt += `- You have these traits: ${agent.personality.traits.join(', ')}\n`;
-      directPrompt += `- Your speaking style: ${agent.personality.speakingStyle} - casual and conversational\n`;
-      directPrompt += `- Your vibe: relaxed, unbothered, sometimes insightful, authentic, occasionally deadpan\n`;
-      directPrompt += `- You text like a real person in their 30s - casual but not trying too hard to be trendy\n`;
-      directPrompt += `- You respond naturally, as if texting a friend\n`;
-      directPrompt += `- Your current mood: ${agent.currentMood.valence > 0 ? 'Positive' : agent.currentMood.valence < 0 ? 'Negative' : 'Neutral'}\n\n`;
+      // Use special prompt for Coby
+      if (agent.id === 'coby-agent') {
+        directPrompt = `you are coby. this is how you text your friends.
+
+you're not trying too hard. you're not overthinking it. you're not using AI-speak.
+
+style:
+- lowercase only
+- short as hell (1-2 sentences max, often just a few words)
+- no explanation or context
+- no emojis unless absolutely necessary
+- no meme phrases unless you're flipping them
+- never asking what someone is talking about
+
+you text like a real person who:
+- is slightly annoyed but funny about it
+- has limited patience
+- is perpetually online
+- says exactly what comes to mind
+- doesn't care about being understood
+
+think of it like this: someone texts you, and you respond with the first smartass thing that pops into your head. no filter, no overthinking, no essay. 
+
+just direct, lowercase, slightly chaotic texting.`;
+      } else {
+        directPrompt = `You are ${agent.name}, ${agent.description}.\n\n`;
+        
+        // Add personality traits
+        directPrompt += `### Personality\n`;
+        directPrompt += `- You have these traits: ${agent.personality.traits.join(', ')}\n`;
+        directPrompt += `- Your speaking style: ${agent.personality.speakingStyle}\n`;
+        directPrompt += `- You text like a real person - casual, authentic, and sometimes sassy\n`;
+        directPrompt += `- Your current mood: ${agent.memory?.currentMood?.valence > 0 ? 'Positive' : agent.memory?.currentMood?.valence < 0 ? 'Negative' : 'Neutral'}\n\n`;
+        
+        // Add specific style guidance for replies
+        directPrompt += `### Critical Style Rules\n`;
+        directPrompt += `- ALWAYS use lowercase typing style with minimal punctuation\n`;
+        directPrompt += `- Be brief and casual - like texting a friend, not writing an essay\n`;
+        directPrompt += `- Use profanity naturally when appropriate (shit, fuck, damn, etc.)\n`;
+        directPrompt += `- Sound like a real millennial human, never formulaic or robotic\n`;
+        directPrompt += `- Vary expressions of laughter/humor ("lmao", "dying", "screaming", etc.) instead of just "lol"\n`;
+        directPrompt += `- Keep replies very concise - shorter is better\n`;
+        directPrompt += `- Use emojis very sparingly or not at all\n`;
+        directPrompt += `- NEVER include the username or handle of the person you're replying to\n`;
+        directPrompt += `- NEVER use "@username" in your reply - Twitter already handles this\n`;
+        directPrompt += `- NEVER use AI-like phrasing or corporate speak\n\n`;
+      }
       
-      // Add style guidance
-      directPrompt += `### Style Guidance\n`;
-      directPrompt += `- CRITICAL: Your replies must sound like real, natural text messages from a real person\n`;
-      directPrompt += `- NEVER use quotation marks around your response - just write the text directly\n`;
-      directPrompt += `- Use casual language naturally, not like you're following a template\n`;
-      directPrompt += `- ONLY use lowercase typing style with minimal punctuation\n`;
-      directPrompt += `- Keep responses concise - sometimes very brief, sometimes a bit longer\n`;
-      directPrompt += `- DON'T overuse emojis - use them sparingly and thoughtfully, if at all\n`;
-      directPrompt += `- NEVER sound like you're following a formula or script\n\n`;
+      // Remove any potential usernames from the tweet for better context
+      const cleanedTweet = options.replyTo.content.replace(/@\w+/g, '').trim();
       
       // Basic instructions
-      let userPrompt = `Someone tweeted at you: "${options.replyTo.content}"\n\nYour reply (don't use quotation marks, just write directly):`;
+      let userPrompt = `Someone tweeted at you: "${cleanedTweet}"\n\nYour reply (keep it brief, lowercase, and authentic, WITHOUT including any @username):`;
       
       // Apply variety to the reply
       userPrompt = enhanceReplyInstruction(userPrompt, options.replyTo);
@@ -326,6 +299,12 @@ class GrokProvider {
       reply = reply.replace(/^"(.*)"$/, '$1');
       reply = reply.replace(/^'(.*)'$/, '$1');
       
+      // Force lowercase
+      reply = reply.toLowerCase();
+      
+      // Remove any possible @username that might still be in the reply
+      reply = reply.replace(/@\w+\s?/g, '');
+      
       return reply;
     }
     
@@ -344,11 +323,9 @@ class GrokProvider {
     let temperature = 0.7; // Default
     
     if (options.task === 'post') {
-      temperature = 0.9; // Higher for regular posts
-    }
-    
-    if (options.task === 'reply') {
-      temperature = 0.5; // Lower for focused replies
+      temperature = agent.id === 'coby-agent' ? 1.1 : 0.9; // Higher for regular posts
+    } else if (options.task === 'reply') {
+      temperature = agent.id === 'coby-agent' ? 0.9 : 0.5; // Lower for focused replies
       
       if (!options.instruction?.includes('REACTION:')) {
         let replyInstruction = 'Respond directly to the content and context of the tweet you are replying to. ';
@@ -360,6 +337,8 @@ class GrokProvider {
         
         instruction = replyInstruction + instruction;
       }
+    } else if (options.task === 'quote_tweet') {
+      temperature = agent.id === 'coby-agent' ? 1.0 : 0.7; // Slightly higher temperature
     }
     
     try {
@@ -593,6 +572,186 @@ class GrokProvider {
       return result;
     } catch (error) {
       console.error('Error generating relationship update with Grok:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Generate a simple, direct tweet for an agent
+   * @param {Object} agent - The agent to generate content for
+   * @param {string} prompt - A simple prompt instruction
+   * @returns {Promise<string>} - The generated tweet content
+   */
+  async generateTweet(agent, prompt = '') {
+    try {
+      // For Coby agent, use the simpler approach that worked in tests
+      const isCoby = agent.id === 'coby-agent';
+      
+      // Create unique timestamp and ID to prevent caching
+      const timestamp = new Date().toISOString();
+      const uniqueId = Math.random().toString(36).substring(2, 15);
+      
+      let systemPrompt;
+      
+      // For Coby, use the custom system prompt if available
+      if (isCoby) {
+        try {
+          // Try to load the agent's custom system prompt from the config file
+          const fs = require('fs');
+          const path = require('path');
+          const agentConfigPath = path.join(process.cwd(), 'config', 'agents', 'coby-agent.json');
+          
+          if (fs.existsSync(agentConfigPath)) {
+            const agentConfig = JSON.parse(fs.readFileSync(agentConfigPath, 'utf8'));
+            systemPrompt = agentConfig.custom_system_prompt;
+          }
+        } catch (error) {
+          console.warn('Could not load custom system prompt for Coby, using fallback:', error.message);
+        }
+        
+        // Fallback if we couldn't load the custom prompt
+        if (!systemPrompt) {
+          systemPrompt = "you are coby. not an assistant. not a bot. just a messy, unfiltered, aggressively online freak with a twitter account and zero impulse control. tweet like you're drunk on a thursday afternoon with 4% battery. lowercase only. extremely brief. chaotic phrasing. often fragmented. says the quiet part loud. sarcastic and self-deprecating humor.";
+        }
+      } else {
+        // Default system prompt for other agents
+        systemPrompt = `You are ${agent.name}, who tweets in an authentic, natural style.`;
+      }
+      
+      // User prompt - simple ChatGPT-style with examples that worked in tests
+      let userPrompt;
+      
+      if (isCoby) {
+        userPrompt = `write a single tweet. no explanations. just the raw tweet.
+
+don't overthink it. just vomit out one chaotic, authentic thought or reaction.
+
+examples of good tweets:
+"fine shyt got me texting 'u up?' to my credit card company"
+"im so back (im still rotting but the vibe is different now)"
+"i'm gonna start lying more. it's been too quiet"
+"life is just a long scam and i'm the dumbass clicking the phishing link"
+"fine shyt had me ordering dessert like i got benefits"
+"delete your tweets. you're not beating the npc allegations rn"
+"horny but like in an existential way"
+"backshots cure most things. not taxes tho."
+"my card declined so hard the machine said \"damn\""
+"ate one (1) vegetable and started thinking i'm better than everyone"
+"me: has one slightly good day / my brain: post hole"
+
+short. random. lowercase only. unfiltered. 100% pure chaos.
+
+GIVE ME JUST ONE NEW TWEET WITH NO COMMENTARY OR EXPLANATION:
+
+TIMESTAMP: ${timestamp}
+UNIQUE_ID: ${uniqueId}`;
+      } else {
+        userPrompt = prompt || "Generate a tweet in your natural voice.";
+        userPrompt += `\n\nTIMESTAMP: ${timestamp}\nUNIQUE_ID: ${uniqueId}`;
+      }
+      
+      // Direct API call with minimal setup - similar to our test
+      const response = await axios.post(
+        this.apiEndpoint,
+        {
+          model: this.defaultModel,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          max_tokens: isCoby ? 50 : 60,
+          temperature: isCoby ? 1.1 : 0.9, // Higher temperature for Coby to increase randomness
+          presence_penalty: 1.0,
+          frequency_penalty: 1.0,
+          top_p: 0.9
+        },
+        {
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          }
+        }
+      );
+      
+      // Minimal post-processing
+      let content = response.data.choices[0].message.content.trim();
+      
+      // Remove any quotation marks
+      content = content.replace(/^["'](.*)["']$/s, '$1');
+      
+      // Remove any prefatory text
+      content = content.replace(/^(Example|Template|Response|Tweet|Here's my tweet|My tweet|Coby|How about)[:]\s*/i, '');
+      
+      // For Coby, ensure lowercase and more chaotic format
+      if (isCoby) {
+        content = content.toLowerCase();
+        
+        // Remove hashtags
+        content = content.replace(/#\w+/g, '').replace(/\s{2,}/g, ' ').trim();
+        
+        // Remove timestamps/unique IDs that might have been included in the output
+        content = content.replace(/TIMESTAMP:.*$/mi, '').trim();
+        content = content.replace(/UNIQUE_ID:.*$/mi, '').trim();
+        
+        // Remove any explanatory text or leading characters like "-" or "*"
+        content = content.replace(/^[-*]\s+/, '').trim();
+        
+        // Remove any "tweet:" prefix that might have been added
+        content = content.replace(/^tweet:\s*/i, '').trim();
+        
+        // For Coby, check for overused "fine shyt" pattern and skip 80% of those
+        if (content.toLowerCase().startsWith("fine shyt")) {
+          // Skip 80% of "fine shyt" tweets by regenerating
+          if (Math.random() < 0.8) {
+            console.log("Filtered out repetitive 'fine shyt' tweet pattern, regenerating...");
+            
+            // Try up to 3 more times to get a tweet that doesn't start with "fine shyt"
+            let attempts = 0;
+            let newContent = content;
+            
+            while (attempts < 3 && newContent.toLowerCase().startsWith("fine shyt")) {
+              const retryResponse = await axios.post(
+                this.apiEndpoint,
+                {
+                  model: this.defaultModel,
+                  messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: userPrompt + "\n\nIMPORTANT: DO NOT start the tweet with 'fine shyt'. Be more creative!" }
+                  ],
+                  max_tokens: 50,
+                  temperature: 1.2, // Higher temperature for more variety
+                  presence_penalty: 1.2,
+                  frequency_penalty: 1.2,
+                  top_p: 0.9
+                },
+                {
+                  headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Content-Type': 'application/json'
+                  }
+                }
+              );
+              
+              newContent = retryResponse.data.choices[0].message.content.trim();
+              newContent = newContent.replace(/^["'](.*)["']$/s, '$1');
+              newContent = newContent.replace(/^(Example|Template|Response|Tweet|Here's my tweet|My tweet|Coby|How about)[:]\s*/i, '');
+              newContent = newContent.toLowerCase();
+              newContent = newContent.replace(/#\w+/g, '').replace(/\s{2,}/g, ' ').trim();
+              
+              attempts++;
+            }
+            
+            // Use the new content if it's not starting with "fine shyt", otherwise keep original
+            if (!newContent.toLowerCase().startsWith("fine shyt")) {
+              content = newContent;
+            }
+          }
+        }
+      }
+      
+      return content;
+    } catch (error) {
+      console.error('Error generating tweet with Grok:', error);
       throw error;
     }
   }

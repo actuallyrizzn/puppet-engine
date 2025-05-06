@@ -107,7 +107,15 @@ class TwitterClient {
       
       // Handle reply
       if (options.replyToTweetId) {
+        console.log(`This is a reply to tweet ID: ${options.replyToTweetId}`);
         tweetOptions.reply = { in_reply_to_tweet_id: options.replyToTweetId };
+        
+        // For replies, ensure we're not including @usernames at the start of the content
+        // Twitter handles the reply threading automatically
+        content = content.replace(/^@\w+\s+/g, '');
+        
+        // Also clean up any other usernames that might be in the reply
+        content = content.replace(/@\w+/g, '').trim();
       }
       
       // Handle quote tweet
@@ -122,8 +130,15 @@ class TwitterClient {
       }
       
       // Send the tweet
-      console.log(`Sending tweet with content: "${content.substring(0, 20)}..."`);
-      console.log(`Tweet options:`, JSON.stringify(tweetOptions));
+      console.log(`Sending tweet with content: "${content.substring(0, 30)}..."`);
+      console.log(`Tweet options: ${JSON.stringify(tweetOptions)}`);
+      
+      // Ensure content is properly formatted
+      // Enforce lowercase for Coby's tweets if this is the coby-agent
+      if (agentId === 'coby-agent') {
+        content = content.toLowerCase();
+      }
+      
       const result = await client.v2.tweet(content, tweetOptions);
       
       // Convert to internal Tweet format
@@ -135,10 +150,26 @@ class TwitterClient {
       tweet.replyToId = options.replyToTweetId || null;
       tweet.quoteTweetId = options.quoteTweetId || null;
       
-      console.log(`Successfully posted tweet with ID: ${tweet.id}`);
+      if (options.replyToTweetId) {
+        console.log(`Successfully posted reply to ${options.replyToTweetId} with ID: ${tweet.id}`);
+      } else {
+        console.log(`Successfully posted tweet with ID: ${tweet.id}`);
+      }
+      
       return tweet;
     } catch (error) {
       console.error(`Error posting tweet for agent ${agentId}:`, error);
+      console.error(`Tweet content was: "${content.substring(0, 50)}..."`);
+      
+      // Check for common error types and provide more helpful messages
+      if (error.code === 187) {
+        console.error(`This appears to be a duplicate tweet error. Twitter doesn't allow identical tweets.`);
+      } else if (error.code === 186) {
+        console.error(`This appears to be a tweet length error. The tweet may be too long.`);
+      } else if (error.code === 88) {
+        console.error(`Rate limit exceeded. Need to wait before posting more tweets.`);
+      }
+      
       throw error;
     }
   }
