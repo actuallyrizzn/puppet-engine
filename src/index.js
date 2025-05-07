@@ -16,11 +16,17 @@ const GrokProvider = require('./llm/grok-provider');
 const EventEngine = require('./events/event-engine');
 const AgentManager = require('./agents/agent-manager');
 const ApiServer = require('./api/api-server');
-const PumpFunTokenManager = require('./solana/pumpfun-token-manager');
+// DISABLED: Token launch feature completely turned off
+// const PumpFunTokenManager = require('./solana/pumpfun-token-manager');
 const db = require('./utils/database');
 
 // Utilities
 const winston = require('winston');
+const fs = require('fs');
+const path = require('path');
+
+// Path to token state file
+const TOKEN_STATE_FILE = path.join(__dirname, '../data/coby-token-state.json');
 
 // Configure logger
 const logger = winston.createLogger({
@@ -53,12 +59,41 @@ async function initializePuppetEngine() {
   logger.info('Starting Puppet Engine...');
   
   try {
+    // Delete token state file if it exists (token launch feature is disabled)
+    if (fs.existsSync(TOKEN_STATE_FILE)) {
+      logger.info(`Removing token state file: ${TOKEN_STATE_FILE}`);
+      fs.unlinkSync(TOKEN_STATE_FILE);
+      logger.info('Token state file removed successfully');
+    }
+    
+    // Delete token-launch directory if it exists
+    const tokenLaunchDir = path.join(__dirname, '../scripts/token-launch');
+    if (fs.existsSync(tokenLaunchDir)) {
+      logger.info(`Removing token-launch directory: ${tokenLaunchDir}`);
+      fs.rmSync(tokenLaunchDir, { recursive: true, force: true });
+      logger.info('Token-launch directory removed successfully');
+    }
+
     // Initialize MongoDB
     let mongoDbConnected = false;
     try {
       await db.connectToDatabase();
       mongoDbConnected = true;
       logger.info('Successfully connected to MongoDB');
+      
+      // Remove token records from MongoDB if they exist
+      try {
+        const collections = await db.getCollections();
+        if (collections.includes(db.COLLECTIONS.TOKENS)) {
+          const tokenCollection = await db.getCollection(db.COLLECTIONS.TOKENS);
+          const result = await tokenCollection.deleteMany({ agentId: 'coby-agent' });
+          if (result.deletedCount > 0) {
+            logger.info(`Removed ${result.deletedCount} token records from MongoDB`);
+          }
+        }
+      } catch (tokenError) {
+        logger.error('Error removing token records from MongoDB:', tokenError);
+      }
     } catch (mongoError) {
       logger.error('Failed to connect to MongoDB, falling back to file storage:', mongoError);
       mongoDbConnected = false;
@@ -120,69 +155,55 @@ async function initializePuppetEngine() {
     await agentManager.loadAgents();
     
     // Initialize PumpFunTokenManager for Coby agent
-    const pumpFunTokenManager = new PumpFunTokenManager({
-      twitterClient: twitterAdapter,
-      agentManager: agentManager,
-      useMongoDb: mongoDbConnected
-    });
-    logger.info('PumpFunTokenManager initialized');
+    // DISABLED: Token launch feature completely turned off
+    // const pumpFunTokenManager = new PumpFunTokenManager({
+    //   twitterClient: twitterAdapter,
+    //   agentManager: agentManager,
+    //   useMongoDb: mongoDbConnected
+    // });
+    // logger.info('PumpFunTokenManager disabled - token launch feature turned off');
     
     // Schedule token launch for Coby agent if not already launched
-    try {
-      const cobyAgentId = 'coby-agent';
-      if (agentManager.agents[cobyAgentId]) {
-        logger.info('Scheduling token launch for Coby agent...');
-        
-        // Check if token is already launched
-        if (pumpFunTokenManager.tokenLaunched) {
-          logger.info(`Coby already has a token: ${pumpFunTokenManager.tokenMintAddress}`);
-        } 
-        // Check if already scheduled
-        else if (pumpFunTokenManager.isLaunchScheduled()) {
-          logger.info(`Token launch already scheduled for ${cobyAgentId} at ${pumpFunTokenManager.scheduledLaunchTime}`);
-        } 
-        // Schedule the token launch
-        else {
-          // Get delay from environment variable or use random
-          let delayMinutes;
-          if (process.env.TOKEN_LAUNCH_DELAY_MINUTES) {
-            delayMinutes = parseInt(process.env.TOKEN_LAUNCH_DELAY_MINUTES);
-            logger.info(`Using configured TOKEN_LAUNCH_DELAY_MINUTES: ${delayMinutes}`);
-          } else {
-            // Default: Schedule with random delay between 5-15 minutes
-            delayMinutes = Math.floor(Math.random() * 11) + 5;
-            logger.info(`Using random token launch delay: ${delayMinutes} minutes`);
-          }
-          
-          // Determine if we should tweet before launch
-          const tweetBeforeLaunch = process.env.TOKEN_PRELAUNCH_TWEET !== 'false';
-          logger.info(`Tweet about scheduled launch: ${tweetBeforeLaunch ? 'ENABLED' : 'DISABLED'}`);
-          
-          const result = await pumpFunTokenManager.scheduleTokenLaunch(cobyAgentId, delayMinutes, tweetBeforeLaunch);
-          
-          if (result.scheduled) {
-            logger.info(`Successfully scheduled token launch for Coby agent in ${delayMinutes} minutes at ${result.scheduledTime}`);
-            
-            // Add a memory about planning to launch a token
-            const agent = agentManager.agents[cobyAgentId];
-            agent.memory.addMemory(
-              `I'm planning to launch my own token on pump.fun soon`,
-              'core',
-              0.7
-            );
-          } else if (result.alreadyLaunched) {
-            logger.info(`Coby already has a token: ${result.mintAddress}`);
-          } else if (result.alreadyScheduled) {
-            logger.info(`Token launch already scheduled for ${cobyAgentId} at ${result.scheduledTime}`);
-          }
-        }
-      } else {
-        logger.warn('Coby agent not found, skipping token launch scheduling');
-      }
-    } catch (error) {
-      logger.error('Error scheduling token launch for Coby agent:', error);
-      // Continue execution even if token launch scheduling fails
-    }
+    // DISABLED: Token launch feature completely turned off
+    // try {
+    //   const cobyAgentId = 'coby-agent';
+    //   if (agentManager.agents[cobyAgentId]) {
+    //     logger.info('Scheduling token launch for Coby agent...');
+    //     
+    //     // Check if token is already launched
+    //     if (pumpFunTokenManager.tokenLaunched) {
+    //       logger.info(`Coby already has a token: ${pumpFunTokenManager.tokenMintAddress}`);
+    //     } 
+    //     // Check if already scheduled
+    //     else if (pumpFunTokenManager.isLaunchScheduled()) {
+    //       logger.info(`Token launch already scheduled for ${cobyAgentId} at ${pumpFunTokenManager.scheduledLaunchTime}`);
+    //     } 
+    //     // Schedule the token launch
+    //     else {
+    //       // Get delay from environment variable or use random
+    //       let delayMinutes;
+    //       if (process.env.TOKEN_LAUNCH_DELAY_MINUTES) {
+    //         delayMinutes = parseInt(process.env.TOKEN_LAUNCH_DELAY_MINUTES);
+    //         logger.info(`Using configured TOKEN_LAUNCH_DELAY_MINUTES: ${delayMinutes}`);
+    //       } else {
+    //         // Default: Schedule with random delay between 5-15 minutes
+    //         delayMinutes = Math.floor(Math.random() * 11) + 5;
+    //         logger.info(`Using random token launch delay: ${delayMinutes} minutes`);
+    //       }
+    //       
+    //       // Determine if we should tweet before launch
+    //       const tweetBeforeLaunch = process.env.TOKEN_PRELAUNCH_TWEET !== 'false';
+    //       logger.info(`Tweet about scheduled launch: ${tweetBeforeLaunch ? 'ENABLED' : 'DISABLED'}`);
+    //       
+    //       const result = await pumpFunTokenManager.scheduleTokenLaunch(cobyAgentId, delayMinutes, tweetBeforeLaunch);
+    //       logger.info('Token launch scheduled:', result);
+    //     }
+    //   } else {
+    //     logger.warn(`Coby agent not found, skipping token launch setup`);
+    //   }
+    // } catch (error) {
+    //   logger.error('Error scheduling token launch:', error);
+    // }
     
     // Create API server
     const apiServer = new ApiServer({
@@ -214,7 +235,7 @@ async function initializePuppetEngine() {
       eventEngine,
       agentManager,
       apiServer,
-      pumpFunTokenManager,
+      // pumpFunTokenManager, // DISABLED: Token launch feature completely turned off
       mongoDbConnected
     };
   } catch (error) {

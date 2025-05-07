@@ -76,11 +76,24 @@ async function getCollection(collectionName) {
   return db.collection(collectionName);
 }
 
+/**
+ * Get all collection names
+ * @returns {Promise<string[]>} Array of collection names
+ */
+async function getCollections() {
+  if (!db) {
+    await connectToDatabase();
+  }
+  const collections = await db.listCollections().toArray();
+  return collections.map(collection => collection.name);
+}
+
 // Export the database connection and helper functions
 module.exports = {
   connectToDatabase,
   closeConnection,
   getCollection,
+  getCollections,
   COLLECTIONS,
   // Helper to check if connected
   isConnected: () => !!client && !!db
