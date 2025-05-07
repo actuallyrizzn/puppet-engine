@@ -5,9 +5,9 @@
   "main": "src/index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js",
+    "dev": "nodemon --config config/app/nodemon.json src/index.js",
     "test": "jest",
-    "pm2:start": "pm2 start ecosystem.config.js",
+    "pm2:start": "pm2 start config/app/ecosystem.config.js",
     "pm2:stop": "pm2 stop puppet-engine",
     "pm2:restart": "pm2 restart puppet-engine",
     "pm2:status": "pm2 status",
