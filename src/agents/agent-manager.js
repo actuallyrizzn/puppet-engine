@@ -111,6 +111,15 @@ class AgentManager {
         console.log(`Loaded custom system prompt for agent ${agent.id}`);
       }
       
+      // Set up rotating system prompts if provided
+      if (config.rotating_system_prompts && Array.isArray(config.rotating_system_prompts) && config.rotating_system_prompts.length > 0) {
+        agent.rotatingSystemPrompts = config.rotating_system_prompts;
+        console.log(`Loaded ${agent.rotatingSystemPrompts.length} rotating system prompts for agent ${agent.id}`);
+      } else {
+        // Initialize with empty array if not provided
+        agent.rotatingSystemPrompts = [];
+      }
+      
       // Set up behavior
       if (config.behavior) {
         if (config.behavior.post_frequency) {
@@ -327,6 +336,15 @@ class AgentManager {
       }
       
       let content = '';
+      let usedPromptIndex = -1; // Track which prompt was used (-1 = custom prompt, -2 = default)
+      let tweetMetadata = {}; // Store metadata about the generated tweet
+      
+      // If the agent has rotating prompts, capture which one is used
+      if (agent.rotatingSystemPrompts && agent.rotatingSystemPrompts.length > 0) {
+        // We don't know which one will be selected yet, but we'll track it in metadata
+        tweetMetadata.hasRotatingPrompts = true;
+        tweetMetadata.numRotatingPrompts = agent.rotatingSystemPrompts.length;
+      }
       
       if (options.task === 'reply' && options.replyTo) {
         // For replies, use the reply-specific method
@@ -389,12 +407,16 @@ class AgentManager {
       
       // Store tweet in memory if memory manager is available
       if (this.memoryManager) {
-        this.memoryManager.addTweetToAgentMemory(agentId, { 
+        // Store prompt metadata
+        const tweetData = { 
           content, 
           timestamp: now, 
           id: tweetId,
-          isReply: options.task === 'reply'
-        });
+          isReply: options.task === 'reply',
+          metadata: tweetMetadata  // Include metadata about which prompt was used
+        };
+        
+        this.memoryManager.addTweetToAgentMemory(agentId, tweetData);
       }
       
       // Schedule the next post
@@ -415,8 +437,24 @@ class AgentManager {
       const agent = this.getAgent(agentId);
       const llmProvider = this.getLLMProviderForAgent(agentId);
       
-      // Skip if the tweet is from the agent itself
-      if (tweet.authorId === agentId) {
+      // Get the agent's username for more accurate self-mention filtering
+      let agentUsername = null;
+      try {
+        const meResult = await this.twitterClient.getClientForAgent(agentId).v2.me();
+        agentUsername = meResult.data.username.toLowerCase();
+      } catch (error) {
+        console.log(`Unable to fetch username for filtering: ${error.message}`);
+        // Continue without the username - we'll still have the ID check
+      }
+      
+      // Enhanced check to skip if the tweet is from the agent itself (check both ID and username)
+      const isSelfMention = 
+        tweet.authorId === agentId || 
+        (agentUsername && tweet.authorUsername && 
+         tweet.authorUsername.toLowerCase() === agentUsername);
+      
+      if (isSelfMention) {
+        console.log(`Skipping self-mention from ${tweet.authorUsername || tweet.authorId}`);
         return null;
       }
       
@@ -800,6 +838,10 @@ class AgentManager {
       return;
     }
     
+    // Important notice about required API level
+    console.log('NOTE: Twitter Filtered Stream API requires Pro access level ($5000/month)');
+    console.log('If streaming fails, the system will automatically fall back to polling');
+    
     // Keep track of active streams
     this.mentionStreams = {};
     
@@ -837,7 +879,7 @@ class AgentManager {
             console.log(`Successfully started mention stream for agent ${agentId}`);
             
           } catch (error) {
-            console.error(`Error starting mention stream for agent ${agentId} (attempt ${retryCount + 1}):`, error);
+            console.error(`Error starting mention stream for agent ${agentId} (attempt ${retryCount + 1}):`, error.message);
             retryCount++;
             
             // If we've reached max retries, fall back to polling
@@ -845,19 +887,19 @@ class AgentManager {
               console.log(`Reached max retries (${maxRetries}). Falling back to polling for agent ${agentId}`);
               this._startPollingMentionsForAgent(
                 agentId, 
-                parseInt(process.env.MENTION_POLLING_INTERVAL) || 60000
+                parseInt(process.env.MENTION_POLLING_INTERVAL) || 10000
               );
             }
           }
         }
       } catch (error) {
-        console.error(`Error in stream setup process for agent ${agentId}:`, error);
-        console.log(`Will fall back to polling for this agent.`);
+        console.error(`Failed to set up streaming for agent ${agentId}:`, error.message);
+        console.log(`Falling back to polling for agent ${agentId}`);
         
-        // Fall back to polling for this agent
+        // Fall back to polling
         this._startPollingMentionsForAgent(
-          agentId,
-          parseInt(process.env.MENTION_POLLING_INTERVAL) || 60000
+          agentId, 
+          parseInt(process.env.MENTION_POLLING_INTERVAL) || 10000
         );
       }
     }

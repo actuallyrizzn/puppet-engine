@@ -19,32 +19,107 @@ class OpenAIProvider {
   }
   
   /**
-   * Build the base system prompt for an agent
+   * Select an appropriate system prompt for the agent
+   * @param {Object} agent - The agent to select a prompt for
+   * @param {string} context - Additional context (e.g., 'reply', 'tweet')
+   * @returns {string} - The selected system prompt
+   */
+  selectSystemPrompt(agent, context = 'tweet') {
+    const { logPromptSelection } = require('./tweet-variety-helpers');
+    
+    // Check if agent has rotating prompts and select one randomly
+    if (agent.rotatingSystemPrompts && agent.rotatingSystemPrompts.length > 0) {
+      const randomIndex = Math.floor(Math.random() * agent.rotatingSystemPrompts.length);
+      const selectedPrompt = agent.rotatingSystemPrompts[randomIndex];
+      
+      // Log which prompt was selected
+      logPromptSelection(agent, randomIndex, context);
+      
+      return selectedPrompt;
+    }
+    
+    // If no rotating prompts, use the custom system prompt
+    if (agent.customSystemPrompt) {
+      // Log that we're using the custom prompt
+      logPromptSelection(agent, -1, context);
+      
+      return agent.customSystemPrompt;
+    }
+    
+    // Fall back to a default prompt based on agent properties
+    // Log that we're using a generated prompt
+    logPromptSelection(agent, -2, context);
+    
+    return `You are ${agent.name}, ${agent.description || 'a social media personality'}. 
+Your tone is ${agent.styleGuide.tone || 'casual and authentic'}.
+Your writing style is ${agent.personality.speakingStyle || 'conversational and natural'}.`;
+  }
+  
+  /**
+   * Build a complete agent prompt
    */
   buildAgentPrompt(agent, options = {}) {
-    // Get the agent's memory
+    // For agents with custom prompts, prioritize using either a rotating prompt or the custom prompt
+    if ((agent.rotatingSystemPrompts && agent.rotatingSystemPrompts.length > 0) || agent.customSystemPrompt) {
+      // Pass the task type as context if available
+      const context = options.task || 'tweet';
+      return this.selectSystemPrompt(agent, context);
+    }
+    
+    // Otherwise build a comprehensive prompt based on agent properties
     const memory = agent.memory;
+    let context = '';
     
-    // Start with basic description
-    let context = `You are ${agent.name}, ${agent.description}.\n\n`;
+    // Agent identity
+    context += `# You are ${agent.name}\n\n`;
+    context += `${agent.description}\n\n`;
     
-    // Add personality description
-    context += "### Personality\n";
-    context += `You have these traits: ${agent.personality.traits.join(', ')}\n`;
-    context += `You value: ${agent.personality.values.join(', ')}\n`;
-    context += `Your speaking style: ${agent.personality.speakingStyle}\n`;
-    context += `Your interests include: ${agent.personality.interests.join(', ')}\n\n`;
+    // Personality traits
+    context += "## Personality\n";
+    if (agent.personality.traits.length > 0) {
+      context += "### Traits\n";
+      agent.personality.traits.forEach(trait => {
+        context += `- ${trait}\n`;
+      });
+      context += "\n";
+    }
     
-    // Add style guide
-    context += "### Style Guide\n";
-    context += `Voice: ${agent.styleGuide.voice}\n`;
-    context += `Tone: ${agent.styleGuide.tone}\n`;
+    if (agent.personality.values.length > 0) {
+      context += "### Values\n";
+      agent.personality.values.forEach(value => {
+        context += `- ${value}\n`;
+      });
+      context += "\n";
+    }
     
-    // Add formatting preferences
-    context += "### Formatting\n";
+    if (agent.personality.speakingStyle) {
+      context += "### Speaking Style\n";
+      context += `${agent.personality.speakingStyle}\n\n`;
+    }
+    
+    if (agent.personality.interests.length > 0) {
+      context += "### Interests\n";
+      agent.personality.interests.forEach(interest => {
+        context += `- ${interest}\n`;
+      });
+      context += "\n";
+    }
+    
+    // Style guide
+    context += "## Style Guide\n";
+    
+    if (agent.styleGuide.voice) {
+      context += `Voice: ${agent.styleGuide.voice}\n`;
+    }
+    
+    if (agent.styleGuide.tone) {
+      context += `Tone: ${agent.styleGuide.tone}\n`;
+    }
     
     if (agent.styleGuide.formatting) {
       const formatting = agent.styleGuide.formatting;
+      
+      context += "\n### Formatting\n";
       
       if (formatting.usesHashtags) {
         context += `Hashtags: ${formatting.hashtagStyle}\n`;
@@ -213,7 +288,13 @@ class OpenAIProvider {
       
       // Use special prompt for Coby
       if (agent.id === 'coby-agent') {
-        directPrompt = `you are coby.
+        // Check for rotating system prompts for Coby
+        if (agent.rotatingSystemPrompts && agent.rotatingSystemPrompts.length > 0) {
+          // Use the context-aware prompt selection helper
+          directPrompt = this.selectSystemPrompt(agent, 'reply');
+        } else {
+          // Use the default Coby prompt if no rotating prompts
+          directPrompt = `you are coby.
 
 you're not mentally ill on main. you're not a tryhard.
 you're just *cooked*, clever, and online too much.
@@ -233,6 +314,7 @@ you tweet like you're texting your smartest, meanest friend.
 no filter, no overthinking, just the first clever response that comes to mind.
 
 be funny. be blunt. be cool.`;
+        }
       } else {
         directPrompt = `You are ${agent.name}, ${agent.description}.\n\n`;
         
@@ -658,28 +740,8 @@ be funny. be blunt. be cool.`;
         systemPrompt = "You are a Twitter user.";
         userPrompt = prompt;
       } else {
-        // For Coby, try to load the custom system prompt from config
-        if (isCoby) {
-          try {
-            // Try to load the agent's custom system prompt from the config file
-            const fs = require('fs');
-            const path = require('path');
-            const agentConfigPath = path.join(process.cwd(), 'config', 'agents', 'coby-agent.json');
-            
-            if (fs.existsSync(agentConfigPath)) {
-              const agentConfig = JSON.parse(fs.readFileSync(agentConfigPath, 'utf8'));
-              systemPrompt = agentConfig.custom_system_prompt;
-            } else {
-              systemPrompt = "You're an expert at generating authentic tweets that capture a specific voice. The tweets should be chaotic, glitchy, lowercase, and feel like intrusive thoughts.";
-            }
-          } catch (error) {
-            console.warn('Could not load custom system prompt for Coby, using fallback.');
-            systemPrompt = "You're an expert at generating authentic tweets that capture a specific voice. The tweets should be chaotic, glitchy, lowercase, and feel like intrusive thoughts.";
-          }
-        } else {
-          // Default system prompt for other agents
-          systemPrompt = `You are ${agent.name}, who tweets in an authentic, natural style.`;
-        }
+        // Get an appropriate system prompt using the helper method
+        systemPrompt = this.selectSystemPrompt(agent, 'tweet');
           
         // Default user prompt if none provided
         userPrompt = prompt || "Generate a tweet in your natural voice.";
@@ -751,6 +813,84 @@ GIVE ME JUST ONE NEW TWEET WITH NO COMMENTARY OR EXPLANATION:`;
         
         // Remove any "tweet:" prefix that might have been added
         content = content.replace(/^tweet:\s*/i, '').trim();
+        
+        // Filter out generic output patterns and LLM defaults like "chaos soup"
+        const blacklistedPhrases = [
+          "more like chaos soup",
+          "chaos soup",
+          "my brain is soup",
+          "my brain is a soup",
+          "brain soup",
+          "brain is soup",
+          "that's the tweet",
+          "and that's the tweet",
+          "and that's it",
+          "that's all",
+          "call that",
+          "just saying",
+          "no thoughts just vibes",
+          "no thoughts head empty",
+          "head empty",
+          "just thoughts",
+          "for real though",
+          "welcome to my ted talk",
+          "thank you for coming to my ted talk"
+        ];
+        
+        // Check if the content contains any blacklisted phrases
+        const containsBlacklisted = blacklistedPhrases.some(phrase => 
+          content.toLowerCase().includes(phrase.toLowerCase())
+        );
+        
+        // If it contains blacklisted phrases, try to regenerate with clearer instructions
+        if (containsBlacklisted) {
+          console.log("Detected generic phrase in output, regenerating...");
+          
+          // Try up to 2 more times to get better content
+          let attempts = 0;
+          let newContent = content;
+          
+          const blacklistPrompt = userPrompt + `
+
+IMPORTANT INSTRUCTION: 
+- DO NOT use phrases like "chaos soup", "brain soup", "that's the tweet", "ted talk", etc.
+- Be more specific and unique to Coby's character
+- Focus on random personal thoughts, not generic internet phrases
+- No meta-commentary about the nature of tweets or your brain
+- Just give me the raw, unfiltered thought with no framing`;
+          
+          while (attempts < 2 && blacklistedPhrases.some(phrase => 
+            newContent.toLowerCase().includes(phrase.toLowerCase())
+          )) {
+            const retryResponse = await this.client.chat.completions.create({
+              model: this.defaultModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: blacklistPrompt }
+              ],
+              max_tokens: 50,
+              temperature: 1.1, // Higher temperature for more variety
+              presence_penalty: 1.2,
+              frequency_penalty: 1.2,
+              top_p: 0.95
+            });
+            
+            newContent = retryResponse.choices[0].message.content.trim();
+            newContent = newContent.replace(/^["'](.*)["']$/s, '$1');
+            newContent = newContent.replace(/^(Example|Template|Response|Tweet|Here's my tweet|My tweet|Coby|How about)[:]\s*/i, '');
+            newContent = newContent.toLowerCase();
+            newContent = newContent.replace(/#\w+/g, '').replace(/\s{2,}/g, ' ').trim();
+            
+            attempts++;
+          }
+          
+          // Use the new content if it doesn't contain blacklisted phrases
+          if (!blacklistedPhrases.some(phrase => 
+            newContent.toLowerCase().includes(phrase.toLowerCase())
+          )) {
+            content = newContent;
+          }
+        }
         
         // For Coby, check for overused "fine shyt" pattern and skip 80% of those
         if (content.toLowerCase().startsWith("fine shyt")) {

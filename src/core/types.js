@@ -131,6 +131,7 @@ class Agent {
   styleGuide = new StyleGuide();
   memory = new AgentMemory();
   customSystemPrompt = null;
+  rotatingSystemPrompts = [];
   behavior = {
     postFrequency: {
       minHoursBetweenPosts: 3,

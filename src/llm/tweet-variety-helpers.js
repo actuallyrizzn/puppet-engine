@@ -4,28 +4,91 @@
  */
 
 /**
- * Return the instruction with no additional guidance
- * @param {string} originalInstruction - The original instruction 
- * @returns {string} - The same instruction with no added text
+ * Helper functions to increase tweet variety
  */
-function enhanceTweetInstruction(originalInstruction) {
-  // Just return the original instruction - no additional text needed
-  return originalInstruction;
+
+/**
+ * Enhance a tweet instruction with random variations to increase diversity in outputs
+ */
+function enhanceTweetInstruction(instruction) {
+  const variations = [
+    "Share a random thought that just came to you.",
+    "What's something you've been thinking about today?",
+    "Express a strong opinion on something happening right now.",
+    "Share an observation about modern life.",
+    "What's a hot take you want to share?",
+    "Share a thought that feels authentic to your personality.",
+    "What's something you'd casually mention to a friend?",
+    "Say something that captures your unique voice.",
+    "What's on your mind right now? Just spit it out.",
+    "Share an unprompted thought in your natural voice."
+  ];
+  
+  // Randomly select a variation 70% of the time
+  if (Math.random() < 0.7) {
+    const randomIndex = Math.floor(Math.random() * variations.length);
+    return variations[randomIndex];
+  }
+  
+  // Otherwise use the original instruction
+  return instruction;
 }
 
 /**
- * Add randomness to reply instructions but no additional text
- * @param {string} originalInstruction - The original instruction
- * @param {Object} replyTo - The tweet being replied to
- * @returns {string} - The instruction with only randomness added
+ * Enhance a reply instruction with random variations
  */
-function enhanceReplyInstruction(originalInstruction, replyTo) {
-  // Just add randomness to avoid similar patterns - no other text
-  const randomSeed = Date.now() + Math.random().toString().slice(2);
-  return originalInstruction + `\n\nRANDOM_SEED: ${randomSeed}`;
+function enhanceReplyInstruction(instruction, replyContext) {
+  const variations = [
+    "How would you naturally respond to this?",
+    "Reply as if you're texting a friend.",
+    "What's your authentic, off-the-cuff response?",
+    "Reply in your natural voice.",
+    "What would be your immediate reaction to this?",
+    "Respond in your typical style.",
+    "What's your take on this? Reply naturally.",
+    "How would you actually respond to this in real life?",
+    "Just respond the way you normally would.",
+    "What would you actually say to this?"
+  ];
+  
+  // Randomly select a variation 60% of the time
+  if (Math.random() < 0.6) {
+    const randomIndex = Math.floor(Math.random() * variations.length);
+    
+    // Combine the tweet context with the variation
+    if (replyContext && replyContext.content) {
+      return `Someone tweeted at you: "${replyContext.content}"\n\n${variations[randomIndex]}`;
+    }
+    return variations[randomIndex];
+  }
+  
+  // Otherwise use the original instruction
+  return instruction;
+}
+
+/**
+ * Log information about which prompt was used for an agent
+ * @param {Object} agent - The agent 
+ * @param {number} promptIndex - The index of the selected prompt
+ * @param {string} context - Additional context (e.g., 'reply', 'tweet')
+ */
+function logPromptSelection(agent, promptIndex, context = 'tweet') {
+  if (!agent || promptIndex === undefined) return;
+  
+  const promptCount = agent.rotatingSystemPrompts ? agent.rotatingSystemPrompts.length : 0;
+  const agentName = agent.name || agent.id || 'Unknown agent';
+  
+  if (promptCount > 0) {
+    console.log(`Using prompt ${promptIndex + 1}/${promptCount} for ${agentName} ${context}`);
+  } else if (agent.customSystemPrompt) {
+    console.log(`Using custom system prompt for ${agentName} ${context}`);
+  } else {
+    console.log(`Using default generated prompt for ${agentName} ${context}`);
+  }
 }
 
 module.exports = {
   enhanceTweetInstruction,
-  enhanceReplyInstruction
+  enhanceReplyInstruction,
+  logPromptSelection
 }; 

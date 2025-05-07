@@ -403,37 +403,153 @@ class TwitterClient {
     try {
       console.log("Validating Twitter account API access level...");
       
-      // First check if we can read stream rules - this requires proper elevated access
-      const rulesResponse = await client.v2.streamRules();
-      console.log("Access check success: Can read stream rules");
-      
-      // Test if we can add/delete rules
-      const testAddRule = await client.v2.updateStreamRules({
-        add: [{ value: 'test rule access', tag: 'access_test' }]
-      });
-      
-      if (testAddRule.meta?.summary?.created) {
-        console.log("Access check success: Can add stream rules");
+      // First let's check the app's current subscription level
+      try {
+        // Get app info to verify subscription level
+        const appInfo = await client.v2.get('https://api.twitter.com/2/openapi');
+        console.log("Successfully accessed API, checking subscription level...");
         
-        // Clean up the test rule
-        if (testAddRule.data && testAddRule.data.length > 0) {
-          const ruleIds = testAddRule.data.map(rule => rule.id);
-          await client.v2.updateStreamRules({
-            delete: { ids: ruleIds }
-          });
-          console.log("Access check success: Can delete stream rules");
+        // This endpoint is only available on Pro or higher plans
+        console.log("GOOD NEWS: Account appears to have Pro access (openapi endpoint accessible)");
+      } catch (appError) {
+        if (appError.code === 403) {
+          console.error("API subscription check failed with 403 Forbidden - likely not on Pro plan");
+        } else {
+          console.error("API subscription check error:", appError.message, appError.code);
+          if (appError.error) {
+            console.error("Detailed error info:", JSON.stringify(appError.error));
+          }
         }
-        
-        return true;
+        // Continue with further tests even if this one fails
       }
       
-      // If we get here, something isn't right with adding rules
-      return false;
+      // Check if we can read stream rules - this requires proper elevated access
+      try {
+        const rulesResponse = await client.v2.streamRules();
+        console.log("Access check success: Can read stream rules");
+        console.log("Rules response:", JSON.stringify(rulesResponse));
+        
+        // Clean up any existing rules for testing
+        if (rulesResponse.data && rulesResponse.data.length > 0) {
+          console.log(`Found ${rulesResponse.data.length} existing rules, cleaning up for testing...`);
+          
+          // Get all rule IDs
+          const ruleIds = rulesResponse.data.map(rule => rule.id);
+          
+          try {
+            // Delete all existing rules
+            const deleteResult = await client.v2.updateStreamRules({
+              delete: { ids: ruleIds }
+            });
+            console.log("Successfully deleted existing rules for testing:", JSON.stringify(deleteResult));
+          } catch (deleteError) {
+            console.error("Error deleting existing rules:", deleteError.message);
+            // Continue anyway
+          }
+        }
+        
+        // Test if we can add a new rule
+        console.log("Attempting to add a test rule...");
+        const testAddRule = await client.v2.updateStreamRules({
+          add: [{ value: 'test rule access ' + Date.now(), tag: 'access_test' }]
+        });
+        
+        console.log("Rule addition response:", JSON.stringify(testAddRule));
+        
+        if (testAddRule.meta?.summary?.created && testAddRule.meta.summary.created > 0) {
+          console.log("Access check success: Can add stream rules");
+          
+          // Clean up the test rule
+          if (testAddRule.data && testAddRule.data.length > 0) {
+            const ruleIds = testAddRule.data.map(rule => rule.id);
+            await client.v2.updateStreamRules({
+              delete: { ids: ruleIds }
+            });
+            console.log("Access check success: Can delete stream rules");
+          }
+          
+          // Now try to connect to the stream to verify complete access
+          try {
+            console.log("Testing stream connection...");
+            const testParams = {
+              'tweet.fields': 'created_at',
+              'expansions': 'author_id'
+            };
+            
+            // Try to connect but immediately close it
+            const testStream = await client.v2.searchStream(testParams);
+            console.log("SUCCESSFUL CONNECTION TO STREAM API!");
+            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+            await testStream.close();
+            
+            console.log("CONFIRMED: Full access to filtered stream API is available!");
+            return true;
+          } catch (streamError) {
+            console.error("Stream connection test failed:", streamError.message);
+            console.error("Error details:", JSON.stringify(streamError));
+            console.error("This indicates you may have partial access but not full streaming capability");
+            
+            if (streamError.code === 403) {
+              console.error("ERROR: Your Twitter API account has permission to manage rules but NOT connect to streams");
+              console.error("This is typically because you need Pro level access ($5000/month)");
+              console.error("Please verify in Twitter Developer Portal that your app's Project subscription is Pro level");
+              console.error("Sometimes it takes up to 24 hours for Twitter to fully activate Pro features after payment");
+            }
+            return false;
+          }
+        } else {
+          // Handle duplicate rule errors differently from permission errors
+          if (testAddRule.errors && testAddRule.errors.some(e => e.title === "DuplicateRule")) {
+            console.log("Found duplicate rule error - this is expected if rules already exist");
+            
+            // Try connecting to the stream anyway
+            try {
+              console.log("Testing stream connection despite rule addition issues...");
+              const testParams = {
+                'tweet.fields': 'created_at',
+                'expansions': 'author_id'
+              };
+              
+              // Try to connect but immediately close it
+              const testStream = await client.v2.searchStream(testParams);
+              console.log("SUCCESSFUL CONNECTION TO STREAM API DESPITE RULE ISSUES!");
+              await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+              await testStream.close();
+              
+              console.log("CONFIRMED: Full access to filtered stream API is available!");
+              return true;
+            } catch (streamError) {
+              console.error("Stream connection test failed:", streamError.message);
+              if (streamError.code === 403) {
+                console.error("ERROR: You may have permissions to manage rules but lack Pro access for streaming");
+              }
+              return false;
+            }
+          }
+          
+          console.error("Failed to add test rule - limited access", JSON.stringify(testAddRule));
+          
+          // Look for the specific "This feature is not available to you" message
+          if (testAddRule.errors && testAddRule.errors.some(e => e.message && e.message.includes("feature is not available"))) {
+            console.error("CONFIRMED: Twitter API responded with 'This feature is not available to you'");
+            console.error("This is a definitive indication that your account lacks Pro level access for filtered streams");
+          }
+          
+          return false;
+        }
+      } catch (rulesError) {
+        console.error("Failed to access stream rules:", rulesError.message);
+        console.error("Error details:", JSON.stringify(rulesError));
+        return false;
+      }
     } catch (error) {
       console.error("Stream API access validation failed:", error.message);
       if (error.code === 403) {
-        console.error("ERROR: Your Twitter API credentials don't have the required Elevated access level for filtered stream API");
-        console.error("You need to apply for Elevated access at https://developer.twitter.com/en/portal/products/elevated");
+        console.error("ERROR: Your Twitter API account doesn't have the required Pro access level for filtered stream API");
+        console.error("Filtered stream API requires the Pro access level ($5000/month) - Basic ($200/month) is not sufficient");
+        console.error("You need to upgrade your account at https://developer.twitter.com/en/portal/products/pro");
+        console.error("If you've already upgraded, make sure you're using API keys from your Pro project");
+        console.error("Check that your Project ID in Twitter Developer Portal matches your credentials");
       }
       return false;
     }
@@ -554,6 +670,22 @@ class TwitterClient {
           console.log(`Received real-time tweet from stream: "${tweetData.data.text.substring(0, 30)}..."`);
           
           try {
+            // Extract author username and check if it's from the agent itself
+            let authorUsername = null;
+            if (tweetData.includes && tweetData.includes.users) {
+              const author = tweetData.includes.users.find(user => user.id === tweetData.data.author_id);
+              if (author) {
+                authorUsername = author.username;
+              }
+            }
+            
+            // IMPORTANT: Skip self-mentions - never process your own tweets
+            if (tweetData.data.author_id === userId || 
+                (authorUsername && authorUsername.toLowerCase() === username.toLowerCase())) {
+              console.log(`Skipping self-mention from ${authorUsername || tweetData.data.author_id}`);
+              return;
+            }
+            
             // Convert to internal Tweet format
             const tweet = new Tweet();
             tweet.id = tweetData.data.id;
@@ -563,11 +695,8 @@ class TwitterClient {
             tweet.isDirectMention = true;
             
             // Extract author username if available
-            if (tweetData.includes && tweetData.includes.users) {
-              const author = tweetData.includes.users.find(user => user.id === tweet.authorId);
-              if (author) {
-                tweet.authorUsername = author.username;
-              }
+            if (authorUsername) {
+              tweet.authorUsername = authorUsername;
             }
             
             // Handle referenced tweets
