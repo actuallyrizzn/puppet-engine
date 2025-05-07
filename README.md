@@ -21,7 +21,7 @@ Key features:
 
 ```bash
 # Clone the repository
-git clone https://github.com/DoughPurrp/puppet-engine.git
+git clone https://github.com/username/puppet-engine.git
 cd puppet-engine
 
 # Install dependencies
