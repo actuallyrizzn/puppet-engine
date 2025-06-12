@@ -1,175 +1,163 @@
-# Puppet Engine Python Port Project Plan
+Perfect. Here's your **full swarm-ready project plan**, structured with:
 
-## Overview
-This document outlines the plan for porting the Puppet Engine from JavaScript to Python. The port will maintain all existing functionality while leveraging Python's ecosystem and best practices.
+* ✅ Actionable task blocks
+* 🚫 Negative prompts to *ward off derailments*
+* 🔁 Interfaces + shared protocols to avoid merge hell
+* 🧱 Foundation stack assumptions baked in
 
-## Phase 1: Project Setup and Infrastructure (Week 1)
+---
 
-### 1.1 Environment Setup
-- [ ] Create new Python project structure
-- [ ] Set up virtual environment management (poetry/pipenv)
-- [ ] Initialize git repository with Python-specific .gitignore
-- [ ] Set up Python linting and formatting (black, flake8)
-- [ ] Configure testing framework (pytest)
+# 🐜 Puppet Engine Port: Swarm Project Plan (Codename: *Marionette*)
 
-### 1.2 Dependency Management
-- [ ] Create requirements.txt/poetry.lock
-- [ ] Map JavaScript dependencies to Python equivalents:
-  - Twitter API: tweepy
-  - Solana: solana-py
-  - Async operations: asyncio
-  - Database: SQLAlchemy/asyncpg
-  - Configuration: python-dotenv
+> Port legacy Puppet Engine (NodeJS) to a fully async, Python-native architecture using FastAPI, `asyncio`, and SQLite. Preserve behavior/state fidelity. Modernize structure for Letta compatibility.
 
-## Phase 2: Core Components Port (Weeks 2-3)
+---
 
-### 2.1 Agent Management System
-- [ ] Port agent base class and interfaces
-- [ ] Implement agent state management
-- [ ] Port agent behavior system
-- [ ] Implement agent interaction logic
-- [ ] Port memory system
+## 🏗️ System Stack
 
-### 2.2 Twitter Integration
-- [ ] Port Twitter API client
-- [ ] Implement tweet generation system
-- [ ] Port mention monitoring
-- [ ] Implement rate limiting and error handling
-- [ ] Port interaction handling
+| Component     | Stack                                  |
+| ------------- | -------------------------------------- |
+| Web API       | `FastAPI`, `pydantic`, `uvicorn`       |
+| Async Tasks   | `asyncio`, custom queues               |
+| Memory Layer  | `SQLite` + `SQLiteWriteQueue` buffer   |
+| LLM Support   | `openai`, (later) `grok` custom client |
+| Twitter       | `tweepy`                               |
+| Solana        | `solana-py`                            |
+| Scheduling    | `apscheduler`                          |
+| Auth (future) | `python-jose`, JWT                     |
+| Testing       | `pytest`, `httpx`, `pytest-asyncio`    |
 
-### 2.3 Event Engine
-- [ ] Port event system architecture
-- [ ] Implement event triggers
-- [ ] Port event handlers
-- [ ] Implement event scheduling
-- [ ] Port random event generation
+---
 
-## Phase 3: Advanced Features (Weeks 4-5)
+## 🧩 Directory Layout
 
-### 3.1 Solana Integration
-- [ ] Port Solana wallet management
-- [ ] Implement trading logic
-- [ ] Port market data integration
-- [ ] Implement safety controls
-- [ ] Port trading tweet generation
+```plaintext
+marionette/
+├── api/               # FastAPI routes + models
+├── agents/            # Agent manager, mood model, prompt logic
+├── memory/            # SQLite + buffered write queue
+├── llm/               # OpenAI + Grok clients
+├── events/            # Event engine
+├── twitter/           # Tweet + reply logic
+├── solana/            # Wallet + tx handling
+├── config/            # Pydantic-driven settings
+├── tests/             # Pytest suite
+└── main.py            # App entrypoint
+```
 
-### 3.2 Memory and State Management
-- [ ] Port persistent storage system
-- [ ] Implement caching layer
-- [ ] Port state synchronization
-- [ ] Implement backup/restore functionality
+---
 
-### 3.3 LLM Integration
-- [ ] Port OpenAI integration
-- [ ] Implement Grok integration
-- [ ] Port prompt management system
-- [ ] Implement response processing
+## 🧠 Agent + Memory Data Model (Key Types)
 
-## Phase 4: Testing and Validation (Week 6)
+* `Agent`
+* `Personality`
+* `StyleGuide`
+* `MemoryItem`
+* `Relationship`
+* `Event`
 
-### 4.1 Unit Testing
-- [ ] Write tests for core components
-- [ ] Implement integration tests
-- [ ] Port existing test cases
-- [ ] Add new test coverage
+All `@dataclass` or `pydantic.BaseModel` for strict typing and validation.
 
-### 4.2 Performance Testing
-- [ ] Benchmark critical paths
-- [ ] Test concurrent operations
-- [ ] Validate memory usage
-- [ ] Test rate limiting
+---
 
-### 4.3 Security Audit
-- [ ] Review API key handling
-- [ ] Audit wallet security
-- [ ] Review data storage
-- [ ] Implement security best practices
+## ✅ Task Blocks
 
-## Phase 5: Documentation and Deployment (Week 7)
+### **1. Base Project Scaffolding (Lead: Architect)**
 
-### 5.1 Documentation
-- [ ] Port existing documentation
-- [ ] Create Python-specific guides
-- [ ] Update API documentation
-- [ ] Create migration guide
+* [ ] Repo layout + `pyproject.toml`
+* [ ] Shared `types/` module for base data classes
+* [ ] Dependency lock + `venv`/`poetry` setup
 
-### 5.2 Deployment
-- [ ] Create deployment scripts
-- [ ] Set up CI/CD pipeline
-- [ ] Create Docker configuration
-- [ ] Document deployment process
+---
 
-## Technical Considerations
+### **2. FastAPI Core API ( A)**
 
-### Python-Specific Optimizations
-- Use asyncio for concurrent operations
-- Implement proper type hints
-- Use dataclasses for configuration
-- Leverage Python's context managers
-- Implement proper exception handling
+* [ ] Implement `GET /status`
+* [ ] Build out `/agents/` endpoints (list, get, create, post, reply, etc.)
+* [ ] `POST /agents/:id/memories` connected to queue
 
-### Performance Considerations
-- Use connection pooling for databases
-- Implement proper caching strategies
-- Use async/await for I/O operations
-- Optimize memory usage
-- Implement proper logging
+🚫 **Don't**: Implement front-end rendering, template engines, or docs UI. Pure JSON API only.
 
-### Security Considerations
-- Secure API key storage
-- Implement proper authentication
-- Secure wallet management
-- Data encryption at rest
-- Input validation
+---
 
-## Migration Strategy
+### **3. SQLite Memory Layer ( B)**
 
-### Step-by-Step Migration
-1. Port core components first
-2. Maintain feature parity
-3. Add Python-specific improvements
-4. Validate functionality
-5. Deploy incrementally
+* [ ] Create SQLite schema for memories, agents, relationships
+* [ ] Implement `SQLiteWriteQueue` (from prior)
+* [ ] Add basic DAO layer with `enqueue()` wrapper
+* [ ] Validate memory persistence and query performance
 
-### Testing Strategy
-1. Unit tests for each component
-2. Integration tests for workflows
-3. Performance benchmarks
-4. Security audits
-5. User acceptance testing
+🚫 **Don't**: Add ORM (like SQLAlchemy). Keep tight low-level control with raw SQL or `aiosqlite`.
 
-## Timeline
-- Total Duration: 7 weeks
-- Buffer for unexpected issues: 1 week
-- Total Project Timeline: 8 weeks
+---
 
-## Success Criteria
-- All existing features ported successfully
-- Performance meets or exceeds JavaScript version
-- All tests passing
-- Documentation complete
-- Security audit passed
-- Successful deployment
+### **4. Agent Runtime Core ( C)**
 
-## Risk Management
+* [ ] Implement `Agent` class with VAD mood tracking
+* [ ] Add behavior profile handling (posting frequency, interaction logic)
+* [ ] Hook into memory system
+* [ ] Stub system prompt generator
 
-### Identified Risks
-1. Library compatibility issues
-2. Performance bottlenecks
-3. Security vulnerabilities
-4. Data migration challenges
-5. API rate limiting issues
+🚫 **Don't**: Implement complex scheduling or prompt chaining yet. Focus on scaffold + interface fidelity.
 
-### Mitigation Strategies
-1. Early prototype of critical components
-2. Regular performance testing
-3. Security reviews
-4. Backup and rollback plans
-5. Rate limit monitoring
+---
 
-## Next Steps
-1. Set up development environment
-2. Create initial project structure
-3. Begin core component porting
-4. Set up CI/CD pipeline
-5. Begin documentation updates 
+### **5. Event Engine ( D)**
+
+* [ ] Port `Event` type
+* [ ] `POST /events` and `GET /events`
+* [ ] Create internal event router for agents
+
+🚫 **Don't**: Add complex scheduling logic. Trigger all events immediately for now.
+
+---
+
+### **6. Twitter Adapter (E)**
+
+* [ ] Basic tweet/post/send reply client using `tweepy`
+* [ ] Rate limit handler
+* [ ] Credential rotation interface
+
+🚫 **Don't**: Implement scraping fallback or full thread tracking in this pass.
+
+---
+
+### **7. LLM Adapter ( F)**
+
+* [ ] Implement OpenAI call wrapper
+* [ ] Add retry logic with `tenacity`
+* [ ] Hook to agent prompt formatter
+
+🚫 **Don't**: Add Grok yet. Don't hardcode API keys into the repo.
+
+---
+
+### **8. Solana Integration ( G)**
+
+* [ ] Wallet connect test with `solana-py`
+* [ ] Stub token transfer
+* [ ] Simulate Jupiter swap (mock if needed)
+
+🚫 **Don't**: Implement real trading or contract interaction in early phases.
+
+---
+
+## 🧪 Testing Protocols
+
+* [ ] Write `pytest` tests for every route
+* [ ] Use `pytest-asyncio` for async support
+* [ ] Include rate limit test cases
+* [ ] Add memory insert + retrieval tests
+
+🚫 **Don't**: Skip tests even for MVP logic. Break it down into async test blocks.
+
+---
+
+## 🛑 Negative Prompt Safeguards
+
+| Trigger Behavior                    | Redirect To                                                      |
+| ----------------------------------- | ---------------------------------------------------------------- |
+| "Let's just use SQLAlchemy"         | No. Raw SQL + `aiosqlite` + queue buffer is mandatory.           |
+| "Can I add a front-end UI?"         | No UI work. This is backend API infrastructure only.             |
+| "Can I try Redis/Postgres instead?" | SQLite is required. The point is offline-friendly minimal infra. |
+| "What if we just skip Twitter?"     | Implement at least one outbound action per agent.                |
