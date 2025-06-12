@@ -62,92 +62,92 @@ All `@dataclass` or `pydantic.BaseModel` for strict typing and validation.
 
 ## ✅ Task Blocks
 
-### **1. Base Project Scaffolding (Lead: Architect)**
+### **1. Base Project Scaffolding (Lead: Architect)** ✅
 
-* [ ] Repo layout + `pyproject.toml`
-* [ ] Shared `types/` module for base data classes
-* [ ] Dependency lock + `venv`/`poetry` setup
+* [x] Repo layout + `pyproject.toml`
+* [x] Shared `types/` module for base data classes
+* [x] Dependency lock + `venv`/`poetry` setup
 
 ---
 
-### **2. FastAPI Core API ( A)**
+### **2. FastAPI Core API ( A)** ✅
 
-* [ ] Implement `GET /status`
-* [ ] Build out `/agents/` endpoints (list, get, create, post, reply, etc.)
-* [ ] `POST /agents/:id/memories` connected to queue
+* [x] Implement `GET /status`
+* [x] Build out `/agents/` endpoints (list, get, create, post, reply, etc.)
+* [x] `POST /agents/:id/memories` connected to queue
 
 🚫 **Don't**: Implement front-end rendering, template engines, or docs UI. Pure JSON API only.
 
 ---
 
-### **3. SQLite Memory Layer ( B)**
+### **3. SQLite Memory Layer ( B)** ✅
 
-* [ ] Create SQLite schema for memories, agents, relationships
-* [ ] Implement `SQLiteWriteQueue` (from prior)
-* [ ] Add basic DAO layer with `enqueue()` wrapper
-* [ ] Validate memory persistence and query performance
+* [x] Create SQLite schema for memories, agents, relationships
+* [x] Implement `SQLiteWriteQueue` (from prior)
+* [x] Add basic DAO layer with `enqueue()` wrapper
+* [x] Validate memory persistence and query performance
 
 🚫 **Don't**: Add ORM (like SQLAlchemy). Keep tight low-level control with raw SQL or `aiosqlite`.
 
 ---
 
-### **4. Agent Runtime Core ( C)**
+### **4. Agent Runtime Core ( C)** ✅
 
-* [ ] Implement `Agent` class with VAD mood tracking
-* [ ] Add behavior profile handling (posting frequency, interaction logic)
-* [ ] Hook into memory system
-* [ ] Stub system prompt generator
+* [x] Implement `Agent` class with VAD mood tracking
+* [x] Add behavior profile handling (posting frequency, interaction logic)
+* [x] Hook into memory system
+* [x] Stub system prompt generator
 
 🚫 **Don't**: Implement complex scheduling or prompt chaining yet. Focus on scaffold + interface fidelity.
 
 ---
 
-### **5. Event Engine ( D)**
+### **5. Event Engine ( D)** ✅
 
-* [ ] Port `Event` type
-* [ ] `POST /events` and `GET /events`
-* [ ] Create internal event router for agents
+* [x] Port `Event` type
+* [x] `POST /events` and `GET /events`
+* [x] Create internal event router for agents
 
 🚫 **Don't**: Add complex scheduling logic. Trigger all events immediately for now.
 
 ---
 
-### **6. Twitter Adapter (E)**
+### **6. Twitter Adapter (E)** ✅
 
-* [ ] Basic tweet/post/send reply client using `tweepy`
-* [ ] Rate limit handler
-* [ ] Credential rotation interface
+* [x] Basic tweet/post/send reply client using `tweepy`
+* [x] Rate limit handler
+* [x] Credential rotation interface
 
 🚫 **Don't**: Implement scraping fallback or full thread tracking in this pass.
 
 ---
 
-### **7. LLM Adapter ( F)**
+### **7. LLM Adapter ( F)** ✅
 
-* [ ] Implement OpenAI call wrapper
-* [ ] Add retry logic with `tenacity`
-* [ ] Hook to agent prompt formatter
+* [x] Implement OpenAI call wrapper
+* [x] Add retry logic with `tenacity`
+* [x] Hook to agent prompt formatter
 
 🚫 **Don't**: Add Grok yet. Don't hardcode API keys into the repo.
 
 ---
 
-### **8. Solana Integration ( G)**
+### **8. Solana Integration ( G)** ✅
 
-* [ ] Wallet connect test with `solana-py`
-* [ ] Stub token transfer
-* [ ] Simulate Jupiter swap (mock if needed)
+* [x] Wallet connect test with `solana-py`
+* [x] Stub token transfer
+* [x] Simulate Jupiter swap (mock if needed)
 
 🚫 **Don't**: Implement real trading or contract interaction in early phases.
 
 ---
 
-## 🧪 Testing Protocols
+## 🧪 Testing Protocols ✅
 
-* [ ] Write `pytest` tests for every route
-* [ ] Use `pytest-asyncio` for async support
-* [ ] Include rate limit test cases
-* [ ] Add memory insert + retrieval tests
+* [x] Write `pytest` tests for every route
+* [x] Use `pytest-asyncio` for async support
+* [x] Include rate limit test cases
+* [x] Add memory insert + retrieval tests
 
 🚫 **Don't**: Skip tests even for MVP logic. Break it down into async test blocks.
 
