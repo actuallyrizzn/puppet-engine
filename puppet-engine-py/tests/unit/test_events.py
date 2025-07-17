@@ -15,17 +15,19 @@ async def test_event_engine_queue_and_listener():
     event = Event(type="test", agent_id="a", data={})
     engine.queue_event(event)
     
-    # Start the engine
-    await engine.start()
-    
-    # Wait for event processing
-    await asyncio.sleep(0.1)
-    
-    # Stop the engine
-    await engine.stop()
-    await asyncio.sleep(0.1)
-    
-    assert "test" in results
+    try:
+        # Start the engine
+        await engine.start()
+        
+        # Wait for event processing
+        await asyncio.sleep(0.1)
+        
+        assert "test" in results
+    finally:
+        # Always stop the engine to clean up background tasks
+        await engine.stop()
+        # Give tasks time to cancel
+        await asyncio.sleep(0.1)
 
 @pytest.mark.asyncio
 async def test_event_engine_scheduled_events():
@@ -37,15 +39,21 @@ async def test_event_engine_scheduled_events():
     
     engine.add_event_listener("scheduled", listener)
     
-    # Test that we can schedule an event without timing issues
-    from datetime import datetime, timedelta
-    scheduled_time = datetime.utcnow() + timedelta(seconds=0.1)
-    event = Event(type="scheduled", agent_id="a", data={}, scheduled_for=scheduled_time)
-    engine.schedule_event(event)
-    
-    # Verify the event was scheduled
-    assert len(engine.scheduled_events) == 1
-    assert engine.scheduled_events[0].type == "scheduled"
+    try:
+        # Test that we can schedule an event without timing issues
+        from datetime import datetime, timedelta
+        scheduled_time = datetime.utcnow() + timedelta(seconds=0.1)
+        event = Event(type="scheduled", agent_id="a", data={}, scheduled_for=scheduled_time)
+        engine.schedule_event(event)
+        
+        # Verify the event was scheduled
+        assert len(engine.scheduled_events) == 1
+        assert engine.scheduled_events[0].type == "scheduled"
+    finally:
+        # Always stop the engine to clean up background tasks
+        await engine.stop()
+        # Give tasks time to cancel
+        await asyncio.sleep(0.1)
 
 @pytest.mark.asyncio
 async def test_event_engine_sync_listener():
@@ -59,17 +67,19 @@ async def test_event_engine_sync_listener():
     event = Event(type="sync_test", agent_id="a", data={})
     engine.queue_event(event)
     
-    # Start the engine
-    await engine.start()
-    
-    # Wait for event processing
-    await asyncio.sleep(0.1)
-    
-    # Stop the engine
-    await engine.stop()
-    await asyncio.sleep(0.1)
-    
-    assert "sync_test" in results
+    try:
+        # Start the engine
+        await engine.start()
+        
+        # Wait for event processing
+        await asyncio.sleep(0.1)
+        
+        assert "sync_test" in results
+    finally:
+        # Always stop the engine to clean up background tasks
+        await engine.stop()
+        # Give tasks time to cancel
+        await asyncio.sleep(0.1)
 
 def test_event_priority_enum():
     assert EventPriority.LOW.value == 0

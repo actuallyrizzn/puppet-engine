@@ -47,3 +47,5 @@ Thumbs.db
 test-*.js
 *-test.js
 *-debug.js 
+puppet-engine-py/__pycache__/test_simple.cpython-313-pytest-8.4.1.pyc
+puppet-engine-py/__pycache__/test_simple.cpython-313-pytest-8.4.1.pyc

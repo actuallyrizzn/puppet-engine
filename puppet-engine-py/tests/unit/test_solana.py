@@ -28,66 +28,95 @@ async def test_solana_trading_mocked():
             pass
         assert True
 
-@pytest.mark.asyncio
-@patch('solana.rpc.async_api.AsyncClient')
-@patch('solana.keypair.Keypair')
-@patch('base58.b58decode')
-async def test_solana_wallet_init(mock_decode, mock_keypair, mock_client):
+def test_solana_wallet_init():
     """Test Solana wallet initialization"""
-    mock_keypair_instance = MagicMock()
-    mock_keypair.from_secret_key.return_value = mock_keypair_instance
-    mock_decode.return_value = b"test_key_bytes"
-    from src.solana.wallet import SolanaWallet
-    wallet = SolanaWallet("test_private_key")
-    assert wallet.private_key == "test_private_key"
-    assert wallet.rpc_url == "https://api.mainnet-beta.solana.com"
-    assert wallet.retry_attempts == 3
+    from unittest.mock import patch, MagicMock
+    with patch.dict('sys.modules', {
+        'solana': MagicMock(),
+        'solana.rpc': MagicMock(),
+        'solana.rpc.async_api': MagicMock(),
+        'solana.keypair': MagicMock(),
+        'solana.transaction': MagicMock(),
+        'solana.system_program': MagicMock(),
+        'solana.publickey': MagicMock(),
+        'base58': MagicMock(),
+    }):
+        import sys
+        sys.modules['solana.keypair'].Keypair = MagicMock()
+        sys.modules['base58'].b58decode = MagicMock(return_value=b"test_key_bytes")
+        mock_keypair_instance = MagicMock()
+        sys.modules['solana.keypair'].Keypair.from_secret_key.return_value = mock_keypair_instance
+        from src.solana.wallet import SolanaWallet
+        wallet = SolanaWallet("test_private_key")
+        assert wallet.private_key == "test_private_key"
+        assert wallet.rpc_url == "https://api.mainnet-beta.solana.com"
+        assert wallet.retry_attempts == 3
 
-@pytest.mark.asyncio
-@patch('solana.rpc.async_api.AsyncClient')
-@patch('solana.keypair.Keypair')
-@patch('base58.b58decode')
-async def test_solana_wallet_get_balance(mock_decode, mock_keypair, mock_client):
+def test_solana_wallet_get_balance():
     """Test getting wallet balance"""
-    mock_keypair_instance = MagicMock()
-    mock_keypair.from_secret_key.return_value = mock_keypair_instance
-    mock_decode.return_value = b"test_key_bytes"
-    mock_response = MagicMock()
-    mock_response.value = 1000000000  # 1 SOL in lamports
-    from src.solana.wallet import SolanaWallet
-    wallet = SolanaWallet("test_private_key")
-    # Patch wallet.client.get_balance to be AsyncMock
-    wallet.client.get_balance = AsyncMock(return_value=mock_response)
-    balance = await wallet.get_balance()
-    assert balance == 1.0  # Should be converted from lamports to SOL
+    from unittest.mock import patch, MagicMock, AsyncMock
+    with patch.dict('sys.modules', {
+        'solana': MagicMock(),
+        'solana.rpc': MagicMock(),
+        'solana.rpc.async_api': MagicMock(),
+        'solana.keypair': MagicMock(),
+        'solana.transaction': MagicMock(),
+        'solana.system_program': MagicMock(),
+        'solana.publickey': MagicMock(),
+        'base58': MagicMock(),
+    }):
+        import sys
+        sys.modules['solana.keypair'].Keypair = MagicMock()
+        sys.modules['base58'].b58decode = MagicMock(return_value=b"test_key_bytes")
+        mock_keypair_instance = MagicMock()
+        sys.modules['solana.keypair'].Keypair.from_secret_key.return_value = mock_keypair_instance
+        mock_response = MagicMock()
+        mock_response.value = 1000000000  # 1 SOL in lamports
+        from src.solana.wallet import SolanaWallet
+        wallet = SolanaWallet("test_private_key")
+        wallet.client.get_balance = AsyncMock(return_value=mock_response)
+        import asyncio
+        balance = asyncio.get_event_loop().run_until_complete(wallet.get_balance())
+        assert balance == 1.0
 
-@pytest.mark.asyncio
-@patch('solana.rpc.async_api.AsyncClient')
-@patch('solana.keypair.Keypair')
-@patch('base58.b58decode')
-async def test_solana_wallet_transfer(mock_decode, mock_keypair, mock_client):
+def test_solana_wallet_transfer():
     """Test SOL transfer"""
-    mock_keypair_instance = MagicMock()
-    mock_keypair.from_secret_key.return_value = mock_keypair_instance
-    mock_decode.return_value = b"test_key_bytes"
-    mock_transaction = MagicMock()
-    mock_transaction.add = MagicMock()
-    mock_transaction.sign = MagicMock()
-    mock_blockhash_response = MagicMock()
-    mock_blockhash_response.value = MagicMock()
-    mock_blockhash_response.value.blockhash = "test_blockhash"
-    mock_transfer_response = MagicMock()
-    mock_transfer_response.value = "test_signature"
-    with patch('src.solana.wallet.Transaction', return_value=mock_transaction):
-        with patch('src.solana.wallet.transfer') as mock_transfer_func:
-            with patch('src.solana.wallet.PublicKey'):
-                from src.solana.wallet import SolanaWallet
-                wallet = SolanaWallet("test_private_key")
-                # Patch wallet.client async methods
-                wallet.client.get_latest_blockhash = AsyncMock(return_value=mock_blockhash_response)
-                wallet.client.send_transaction = AsyncMock(return_value=mock_transfer_response)
-                signature = await wallet.transfer_sol("destination_address", 0.1)
-                assert signature == "test_signature"
+    from unittest.mock import patch, MagicMock, AsyncMock
+    with patch.dict('sys.modules', {
+        'solana': MagicMock(),
+        'solana.rpc': MagicMock(),
+        'solana.rpc.async_api': MagicMock(),
+        'solana.keypair': MagicMock(),
+        'solana.transaction': MagicMock(),
+        'solana.system_program': MagicMock(),
+        'solana.publickey': MagicMock(),
+        'base58': MagicMock(),
+    }):
+        import sys
+        sys.modules['solana.keypair'].Keypair = MagicMock()
+        sys.modules['base58'].b58decode = MagicMock(return_value=b"test_key_bytes")
+        # Mock Transaction, transfer, PublicKey
+        mock_transaction = MagicMock()
+        mock_transaction.add = MagicMock()
+        mock_transaction.sign = MagicMock()
+        sys.modules['solana.transaction'].Transaction = MagicMock(return_value=mock_transaction)
+        sys.modules['solana.system_program'].transfer = MagicMock(return_value=MagicMock())
+        sys.modules['solana.system_program'].TransferParams = MagicMock()
+        sys.modules['solana.publickey'].PublicKey = MagicMock(return_value=MagicMock())
+        mock_keypair_instance = MagicMock()
+        sys.modules['solana.keypair'].Keypair.from_secret_key.return_value = mock_keypair_instance
+        mock_blockhash_response = MagicMock()
+        mock_blockhash_response.value = MagicMock()
+        mock_blockhash_response.value.blockhash = "test_blockhash"
+        mock_transfer_response = MagicMock()
+        mock_transfer_response.value = "test_signature"
+        from src.solana.wallet import SolanaWallet
+        wallet = SolanaWallet("test_private_key")
+        wallet.client.get_latest_blockhash = AsyncMock(return_value=mock_blockhash_response)
+        wallet.client.send_transaction = AsyncMock(return_value=mock_transfer_response)
+        import asyncio
+        signature = asyncio.get_event_loop().run_until_complete(wallet.transfer_sol("destination_address", 0.1))
+        assert signature == "test_signature"
 
 @pytest.mark.asyncio
 @patch('httpx.AsyncClient')
@@ -163,3 +192,76 @@ async def test_solana_trader_error_handling(mock_client):
         await trader.get_quote("mint1", "mint2", 1.0)
     except Exception as e:
         assert "API Error" in str(e) 
+
+@pytest.mark.asyncio
+@patch('httpx.AsyncClient')
+async def test_solana_trader_execute_swap_success(mock_client):
+    """Test successful execution of a swap"""
+    mock_instance = mock_client.return_value
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"swapTransaction": "tx_data"}
+    mock_response.raise_for_status = MagicMock()
+    mock_instance.post = AsyncMock(return_value=mock_response)
+    wallet = MagicMock()
+    wallet.get_public_key.return_value = "pubkey"
+    wallet.transfer_sol = AsyncMock(return_value="signature123")
+    from src.solana.trading import SolanaTrader
+    trader = SolanaTrader(wallet)
+    quote_response = {"foo": "bar"}
+    signature = await trader.execute_swap(quote_response)
+    assert signature == "signature123"
+
+@pytest.mark.asyncio
+@patch('httpx.AsyncClient')
+async def test_solana_trader_execute_swap_error(mock_client):
+    """Test error during swap execution"""
+    mock_instance = mock_client.return_value
+    mock_instance.post = AsyncMock(side_effect=Exception("fail post"))
+    wallet = MagicMock()
+    wallet.get_public_key.return_value = "pubkey"
+    wallet.transfer_sol = AsyncMock(return_value="sig")
+    from src.solana.trading import SolanaTrader
+    trader = SolanaTrader(wallet)
+    with pytest.raises(Exception) as e:
+        await trader.execute_swap({"foo": "bar"})
+    assert "Swap execution failed" in str(e.value)
+
+@pytest.mark.asyncio
+@patch('httpx.AsyncClient')
+async def test_solana_trader_get_route_success(mock_client):
+    """Test getting a route for a swap"""
+    mock_instance = mock_client.return_value
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"route": "best"}
+    mock_response.raise_for_status = MagicMock()
+    mock_instance.get = AsyncMock(return_value=mock_response)
+    from src.solana.trading import SolanaTrader
+    wallet = MagicMock()
+    trader = SolanaTrader(wallet)
+    route = await trader.get_route("mint1", "mint2", 1.0)
+    assert route["route"] == "best"
+
+@pytest.mark.asyncio
+@patch('httpx.AsyncClient')
+async def test_solana_trader_get_route_error(mock_client):
+    """Test error in get_route"""
+    mock_instance = mock_client.return_value
+    mock_instance.get = AsyncMock(side_effect=Exception("fail get"))
+    from src.solana.trading import SolanaTrader
+    wallet = MagicMock()
+    trader = SolanaTrader(wallet)
+    with pytest.raises(Exception) as e:
+        await trader.get_route("mint1", "mint2", 1.0)
+    assert "Failed to get route" in str(e.value)
+
+@pytest.mark.asyncio
+@patch('httpx.AsyncClient')
+async def test_solana_trader_close(mock_client):
+    """Test closing the HTTP client"""
+    mock_instance = mock_client.return_value
+    mock_instance.aclose = AsyncMock()
+    from src.solana.trading import SolanaTrader
+    wallet = MagicMock()
+    trader = SolanaTrader(wallet)
+    await trader.close()
+    mock_instance.aclose.assert_awaited() 

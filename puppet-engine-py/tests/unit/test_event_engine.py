@@ -15,14 +15,16 @@ async def test_event_engine_queue_and_listener():
     event = Event(type="test", agent_id="a", data={})
     engine.queue_event(event)
     
-    # Start the engine
-    await engine.start()
-    
-    # Wait for event processing
-    await asyncio.sleep(0.1)
-    
-    # Stop the engine
-    await engine.stop()
-    await asyncio.sleep(0.1)
-    
-    assert "test" in results 
+    try:
+        # Start the engine
+        await engine.start()
+        
+        # Wait for event processing
+        await asyncio.sleep(0.1)
+        
+        assert "test" in results
+    finally:
+        # Always stop the engine to clean up background tasks
+        await engine.stop()
+        # Give tasks time to cancel
+        await asyncio.sleep(0.1) 
