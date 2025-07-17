@@ -7,7 +7,7 @@ class Settings(BaseSettings):
     debug: bool = False
     log_level: str = "INFO"
     # Database
-    mongodb_uri: str = "mongodb://localhost:27017/puppet-engine"
+    sqlite_db_path: str = "puppet_engine.db"
     redis_url: str = "redis://localhost:6379"
     
     # Twitter/X API

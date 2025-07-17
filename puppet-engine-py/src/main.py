@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 
 from .core.settings import Settings
-from .memory.mongo_store import MongoMemoryStore
+from .memory.sqlite_store import SQLiteMemoryStore
 from .llm.openai_provider import OpenAILLMProvider
 from .llm.fake_provider import FakeLLMProvider
 from .twitter.client import TwitterXClient
@@ -34,16 +34,9 @@ class PuppetEngine:
         self.logger.log("info", "Starting Puppet Engine...")
         
         try:
-            # Initialize MongoDB memory store
-            memory_store = None
-            mongo_connected = False
-            try:
-                memory_store = MongoMemoryStore(self.settings.mongodb_uri)
-                mongo_connected = True
-                self.logger.log("info", "Successfully connected to MongoDB")
-            except Exception as mongo_error:
-                self.logger.log("error", f"Failed to connect to MongoDB, falling back to file storage: {mongo_error}")
-                mongo_connected = False
+            # Initialize SQLite memory store
+            memory_store = SQLiteMemoryStore()
+            self.logger.log("info", "Using SQLite memory store")
             
             # Initialize Twitter client
             twitter_credentials = {
@@ -117,7 +110,7 @@ class PuppetEngine:
                 'event_engine': event_engine,
                 'agent_manager': agent_manager,
                 'api_server': api_server,
-                'mongo_connected': mongo_connected
+                'mongo_connected': True # SQLite is always connected
             }
             
             return self.components
@@ -267,7 +260,7 @@ class PuppetEngine:
             if 'twitter_client' in self.components:
                 await self.components['twitter_client'].close()
             
-            # Close MongoDB connection
+            # Close SQLite connection
             if 'memory_store' in self.components and self.components['memory_store']:
                 if hasattr(self.components['memory_store'], 'client'):
                     self.components['memory_store'].client.close()

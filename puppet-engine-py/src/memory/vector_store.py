@@ -1,10 +1,11 @@
 from .base import VectorStore
 from typing import List, Dict, Any, Optional
+from .sqlite_vector_store import SQLiteVectorStore
 
-class MongoVectorStore(VectorStore):
-    def __init__(self, mongodb_uri: str, db_name: str = "puppet_engine"):
-        self.client = None  # Placeholder for future implementation
-        self.db = None
+class SQLiteVectorStore(VectorStore):
+    def __init__(self, db_path: str = "puppet_engine.db"):
+        self.db_path = db_path
+        self._db = None
 
     async def store_embedding(self, memory_id: str, embedding: List[float]) -> bool:
         # TODO: Implement vector storage
