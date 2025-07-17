@@ -1,0 +1,32 @@
+# Core dependencies
+fastapi==0.116.1
+uvicorn==0.35.0
+pydantic==2.11.7
+pydantic-settings==2.2.1
+motor==3.4.0
+openai==1.30.5
+apscheduler==3.10.4
+loguru==0.7.2
+python-dotenv==1.0.1
+prometheus-fastapi-instrumentator==7.0.0
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+# opentelemetry-instrumentation-motor  # Not available on PyPI
+redis==5.0.4
+protobuf>=4.21.0,<5.0.0
+
+# Solana and Twitter/X (if needed)
+solana==0.30.0
+# twitterx==0.3.0  # Uncomment if/when available on PyPI
+
+# Dev dependencies
+pytest==8.4.1
+pytest-asyncio==0.23.7
+pytest-mock==3.14.0
+black==24.4.2
+isort==5.13.2
+mypy==1.10.0
+flake8==7.0.0
+pre-commit==3.7.1 
