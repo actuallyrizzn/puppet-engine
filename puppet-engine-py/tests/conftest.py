@@ -1,7 +1,7 @@
 import pytest
 import asyncio
 import logging
-import traceback
+import os
 from unittest.mock import AsyncMock, MagicMock
 from src.core.settings import Settings
 from src.memory.base import MemoryStore, VectorStore
@@ -13,54 +13,28 @@ from src.agents.agent_manager import AgentManager
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
 
-@pytest.fixture(scope="session", autouse=True)
-def print_asyncio_tasks_at_end(request):
-    def finalizer():
-        logger.info("=== FINALIZER: Checking for running asyncio tasks at session end ===")
-        try:
-            loop = asyncio.get_event_loop()
-            tasks = asyncio.all_tasks(loop)
-            logger.info(f"FINALIZER: {len(tasks)} tasks still running.")
-            for task in tasks:
-                logger.info(f"Task: {task}")
-                stack = task.get_stack()
-                if stack:
-                    logger.info(''.join(traceback.format_list(traceback.extract_stack(stack[-1]))))
-        except Exception as e:
-            logger.error(f"Error in finalizer: {e}")
-    request.addfinalizer(finalizer)
-
-@pytest.fixture(scope="session")
-async def session_teardown():
-    """Session-level fixture to handle cleanup at the end of all tests."""
+@pytest.fixture(autouse=True)
+async def cancel_asyncio_tasks_after_test():
     yield
-    logger.info("=== SESSION TEARDOWN STARTING ===")
-    
-    # Get all running tasks
-    try:
-        tasks = asyncio.all_tasks()
-        logger.info(f"Active tasks at session teardown: {len(tasks)}")
+    # Cancel all running asyncio tasks except the current one
+    current_task = asyncio.current_task()
+    tasks = [t for t in asyncio.all_tasks() if t is not current_task]
+    if tasks:
+        logger.debug(f"Cancelling {len(tasks)} leftover asyncio tasks after test...")
         for task in tasks:
-            logger.info(f"  - {task.get_name()}: {task}")
-    except Exception as e:
-        logger.error(f"Error getting tasks: {e}")
-    
-    # Force cleanup of any remaining EventEngine instances
-    try:
-        # Cancel all tasks
-        tasks = asyncio.all_tasks()
-        for task in tasks:
-            if not task.done():
-                logger.info(f"Cancelling task: {task.get_name()}")
-                task.cancel()
-        
-        # Wait for cancellation
-        if tasks:
-            await asyncio.gather(*tasks, return_exceptions=True)
-    except Exception as e:
-        logger.error(f"Error during task cleanup: {e}")
-    
-    logger.info("=== SESSION TEARDOWN COMPLETE ===")
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+# Hard exit at session finish if pytest hangs
+
+# def pytest_sessionfinish(session, exitstatus):
+#     logger.info("pytest_sessionfinish: Forcing process exit to avoid hang.")
+#     os._exit(exitstatus)
+
+def pytest_configure(config):
+    # Warn if someone forgot to set the env-var on CI
+    if not os.getenv("PYTHONASYNCIODEBUG"):
+        os.environ["PYTHONASYNCIODEBUG"] = "1"
 
 @pytest.fixture
 async def settings():
@@ -126,11 +100,12 @@ async def event_engine():
 
 @pytest.fixture
 async def agent_manager(settings, mock_memory_store, mock_vector_store, mock_llm_provider, event_engine):
-    """Provide an AgentManager instance for testing."""
+    """Provide an AgentManager instance for testing with proper cleanup."""
     manager = AgentManager({
         'memory_store': mock_memory_store,
         'default_llm_provider': mock_llm_provider,
         'event_engine': event_engine,
         'settings': settings
     })
+    
     yield manager 
