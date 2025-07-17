@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 import json
 import tempfile
 import os
+from pathlib import Path
 
 from src.agents.agent_manager import AgentManager
 from src.core.models import Agent, Personality, MemoryItem, Event, Tweet, MemoryType
@@ -223,7 +224,9 @@ class TestAgentManager:
         
         tweet = await agent_manager.create_agent_post("test-agent")
         
-        assert tweet is None
+        # When no LLM provider is set, a fake provider is used as fallback
+        assert tweet is not None
+        assert "Test tweet content" in tweet.text
     
     @pytest.mark.asyncio
     async def test_create_agent_post_twitter_error(self, agent_manager, sample_agent_config, mock_twitter_client):
@@ -377,16 +380,22 @@ class TestAgentManager:
             config_path = f.name
         
         try:
-            # Mock Path.glob to return our config file
-            with patch('pathlib.Path.glob') as mock_glob:
-                mock_glob.return_value = [config_path]
+            # Mock Path.exists to return True
+            with patch('pathlib.Path.exists') as mock_exists:
+                mock_exists.return_value = True
                 
-                # Mock open to read our config
-                with patch('builtins.open', mock_open(read_data=json.dumps(sample_agent_config))):
-                    await agent_manager.load_agents("fake_config_dir")
+                # Mock Path.glob to return our config file
+                with patch('pathlib.Path.glob') as mock_glob:
+                    mock_glob.return_value = [Path(config_path)]
                     
-                    # Check agent was loaded
-                    assert "test-agent" in agent_manager.agents
+                    # Mock json.load to return our config
+                    with patch('json.load') as mock_json_load:
+                        mock_json_load.return_value = sample_agent_config
+                        
+                        await agent_manager.load_agents("fake_config_dir")
+                        
+                        # Check agent was loaded
+                        assert "test-agent" in agent_manager.agents
         finally:
             # Clean up
             os.unlink(config_path)
