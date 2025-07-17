@@ -2,7 +2,6 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from prometheus_fastapi_instrumentator import Instrumentator
 from ..core.settings import settings
-from ..adapters.node_adapter import NodeAdapter
 from typing import Optional, Dict, Any
 
 class APIServer:
@@ -13,7 +12,6 @@ class APIServer:
             version="2.0.0"
         )
         self.settings = settings
-        self.node_adapter = NodeAdapter(settings)
         self._setup_middleware()
         self._setup_routes()
         self._setup_observability()
@@ -32,15 +30,25 @@ class APIServer:
         async def health():
             return {"status": "ok"}
 
-        @self.app.api_route("/node/{path:path}", methods=["GET", "POST", "PUT", "DELETE"])
-        async def proxy_to_node(request: Request, path: str):
-            method = request.method
-            data: Optional[Dict[str, Any]] = await request.json() if method in ("POST", "PUT") else None
-            try:
-                result = await self.node_adapter.forward_request(method, f"/{path}", data)
-                return result
-            except Exception as e:
-                raise HTTPException(status_code=502, detail=str(e))
+        @self.app.get("/agents")
+        async def list_agents():
+            # TODO: Implement agent listing
+            return {"agents": []}
+
+        @self.app.get("/agents/{agent_id}")
+        async def get_agent(agent_id: str):
+            # TODO: Implement agent details
+            return {"agent_id": agent_id, "status": "active"}
+
+        @self.app.post("/agents/{agent_id}/post")
+        async def trigger_post(agent_id: str):
+            # TODO: Implement manual post trigger
+            return {"agent_id": agent_id, "action": "post_triggered"}
+
+        @self.app.post("/agents/{agent_id}/trade")
+        async def trigger_trade(agent_id: str):
+            # TODO: Implement manual trade trigger
+            return {"agent_id": agent_id, "action": "trade_triggered"}
 
     def _setup_observability(self):
         Instrumentator().instrument(self.app).expose(self.app)

@@ -33,7 +33,6 @@ If you're new to Puppet Engine, start here:
 
 ### Deployment & Operations
 - **[Deployment](DEPLOYMENT.md)** - Production deployment, Docker, cloud platforms, and monitoring
-- **[PM2 Process Management](PM2-README.md)** - Using PM2 for process management and auto-restart
 
 ### Advanced Features
 - **[Personality Design](PERSONALITY_DESIGN.md)** - Designing realistic AI character personalities and behaviors
@@ -62,7 +61,7 @@ If you're new to Puppet Engine, start here:
 ### For System Administrators
 1. Review [Deployment](DEPLOYMENT.md) for production setup
 2. Configure monitoring and logging
-3. Set up [PM2 Process Management](PM2-README.md) if needed
+3. Set up systemd service for Linux systems
 4. Understand [Configuration](CONFIGURATION.md) for environment management
 
 ### For AI/ML Engineers

@@ -8,7 +8,6 @@ def test_api_server_init():
     server = APIServer(settings)
     assert server.app is not None
     assert server.settings == settings
-    assert server.node_adapter is not None
 
 def test_api_server_setup_middleware():
     settings = Settings()

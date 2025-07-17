@@ -1,7 +1,8 @@
-seline Integration Tests for Puppet Engine Migration
+"""
+Puppet Engine - Core Models
 
-This test suite captures the current Node.js behavior to ensure
-the Python migration maintains functional parity.
+Pydantic models for the Puppet Engine system.
+"""
 
 from pydantic import BaseModel, Field, validator
 from typing import List, Dict, Optional, Any
@@ -10,13 +11,17 @@ from enum import Enum
 
 
 class MemoryType(str, Enum):
-    CORE = core    EVENT =event"
-    INTERACTION =interaction"
-    GENERAL =general
+    CORE = "core"
+    EVENT = "event"
+    INTERACTION = "interaction"
+    GENERAL = "general"
+
+
 class Personality(BaseModel):
-    traits: List[str] = Field(default_factory=list, max_items=20)
-    values: List[str] = Field(default_factory=list, max_items=10)
-    speaking_style: str = Field(max_length=50   interests: List[str] = Field(default_factory=list, max_items=15)
+    traits: List[str] = Field(default_factory=list)
+    values: List[str] = Field(default_factory=list)
+    speaking_style: str = Field(default="", max_length=500)
+    interests: List[str] = Field(default_factory=list)
     
     @validator('traits', 'values', 'interests')
     def validate_list_items(cls, v):
@@ -24,15 +29,18 @@ class Personality(BaseModel):
 
 
 class Agent(BaseModel):
-    id: str = Field(regex=r^[a-z0 name: str = Field(min_length=1, max_length=100)
+    id: str = Field(pattern=r"^[a-z0-9-]+$")
+    name: str = Field(min_length=1, max_length=100)
     description: str = Field(max_length=1000)
-    personality: Personality = Field(default_factory=Personality)
-    custom_system_prompt: Optional[str] = Field(max_length=500   rotating_system_prompts: List[str] = Field(default_factory=list)
+    personality: Personality = Field(default_factory=lambda: Personality())
+    custom_system_prompt: Optional[str] = Field(max_length=5000)
+    rotating_system_prompts: List[str] = Field(default_factory=list)
     behavior: Dict[str, Any] = Field(default_factory=dict)
     current_mood: Dict[str, float] = Field(default_factory=dict)
     last_post_time: Optional[datetime] = None
     goals: List[str] = Field(default_factory=list)
-    style_guide: Optional[str] = Field(max_length=100
+    style_guide: Optional[Dict[str, Any]] = Field(default_factory=dict)
+
 
 class MemoryItem(BaseModel):
     id: str
@@ -41,18 +49,22 @@ class MemoryItem(BaseModel):
     content: str
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     metadata: Dict[str, Any] = Field(default_factory=dict)
-    importance: float = Field(default=1.0e=0.0, le=10
+    importance: float = Field(default=1.0, ge=0.0, le=10.0)
+
 
 class Event(BaseModel):
     id: str
     type: str
     data: Dict[str, Any] = Field(default_factory=dict)
     timestamp: datetime = Field(default_factory=datetime.utcnow)
-    priority: int = Field(default=1, ge=1, le=10   processed: bool =false
+    priority: int = Field(default=1, ge=1, le=10)
+    processed: bool = False
+
+
 class LLMResponse(BaseModel):
     content: str
     model: str
-    usage: Optional[Dictstr, int]] = None
+    usage: Optional[Dict[str, int]] = None
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
 

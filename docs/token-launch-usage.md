@@ -18,14 +18,14 @@ Before running the token launcher, make sure:
 
 ## Running the Token Launcher
 
-We've added several npm scripts to make token launching easier:
+We've added several Python scripts to make token launching easier:
 
 ### Basic Token Launch
 
 This checks whether an agent already has a token, and if not, creates a new one.
 
 ```bash
-npm run token:launch
+python scripts/token_launch.py
 ```
 
 ### Force a New Token Launch
@@ -33,7 +33,7 @@ npm run token:launch
 This deletes any existing token state and forces the creation of a new token. Use this cautiously on mainnet as it will use real SOL.
 
 ```bash
-npm run token:force-new
+python scripts/token_launch.py --force-new
 ```
 
 ### Force a Tweet About Existing Token
@@ -41,7 +41,7 @@ npm run token:force-new
 If an agent already has a token, this will force a new tweet about the existing token without creating a new one.
 
 ```bash
-npm run token:tweet
+python scripts/token_launch.py --force-tweet
 ```
 
 ## Customizing the Launch
@@ -54,22 +54,22 @@ You can set a custom tweet message by adding the following to your `.env` file:
 CUSTOM_TWEET_MESSAGE="just launched my test token on pump.fun, probably worthless but yolo"
 ```
 
-### Running Directly with Node
+### Running Directly with Python
 
 You can also run the launcher directly with additional options:
 
 ```bash
 # Basic launch
-node scripts/token-launch/coby-token-launcher.js
+python scripts/token_launch.py
 
 # Force new token launch
-node scripts/token-launch/coby-token-launcher.js --force-new
+python scripts/token_launch.py --force-new
 
 # Force tweet about existing token
-node scripts/token-launch/coby-token-launcher.js --force-tweet
+python scripts/token_launch.py --force-tweet
 
 # Both force new and force tweet
-node scripts/token-launch/coby-token-launcher.js --force-new --force-tweet
+python scripts/token_launch.py --force-new --force-tweet
 ```
 
 ## Understanding Launch Results
@@ -86,7 +86,7 @@ The token launcher will output:
 
 By default, the token launcher runs in simulation mode to avoid using real SOL for testing. To enable actual on-chain token creation:
 
-1. Edit `src/solana/pumpfun-token-manager.js`
+1. Edit `src/solana/pumpfun_token_manager.py`
 2. Set `SIMULATION_MODE = false` at the top of the file
 3. Ensure your wallet has enough SOL for the operation
 

@@ -85,7 +85,7 @@ Modify the token launch parameters in the `launchTokenIfNeeded` method to custom
 To launch a token or check if one exists:
 
 ```bash
-npm run token:launch
+python scripts/token_launch.py
 ```
 
 ### Forcing a New Token
@@ -93,7 +93,7 @@ npm run token:launch
 To force a new token creation (for testing or development):
 
 ```bash
-npm run token:force-new
+python scripts/token_launch.py --force-new
 ```
 
 ### Posting About Existing Tokens
@@ -101,7 +101,7 @@ npm run token:force-new
 To tweet about an existing token without creating a new one:
 
 ```bash
-npm run token:tweet
+python scripts/token_launch.py --force-tweet
 ```
 
 ## 📁 Implementation Files

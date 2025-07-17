@@ -1,6 +1,7 @@
-seline Integration Tests for Puppet Engine Migration
+"""
+Puppet Engine - Python Implementation
 
-This test suite captures the current Node.js behavior to ensure
-the Python migration maintains functional parity.
+Autonomous AI agent framework for deploying persistent characters on Twitter.
+"""
 
 __version__ = "2.0.0" 

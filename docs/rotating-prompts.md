@@ -55,8 +55,7 @@ Two test scripts are provided to verify the rotating prompt system:
 Run these scripts to see how different prompts affect the output:
 
 ```bash
-node test-coby-tweets.js
-node test-coby-replies.js
+python tests/test_rotating_prompts.py
 ```
 
 ## Metadata

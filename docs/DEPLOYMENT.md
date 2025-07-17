@@ -17,7 +17,6 @@ This guide covers deploying Puppet Engine in various environments, from developm
 ### Dependencies
 
 - **SQLite**: Built-in (no external database required)
-- **Node.js**: 18+ (for PM2 deployment)
 - **Docker**: 20.10+ (for containerized deployment)
 
 ## Environment Configuration
@@ -157,67 +156,66 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
    # Ctrl+A, D to detach
    ```
 
-### Method 2: PM2 Deployment (Recommended)
+### Method 2: Systemd Service (Recommended for Linux)
 
-PM2 provides process management, auto-restart, and monitoring.
+Systemd provides process management, auto-restart, and monitoring for Linux systems.
 
-1. **Install PM2**:
-   ```bash
-   npm install -g pm2
-   ```
-
-2. **Create PM2 Configuration**:
-   ```javascript
-   // ecosystem.config.js
-   module.exports = {
-     apps: [{
-       name: 'puppet-engine',
-       script: 'python',
-       args: '-m src.main --production',
-       cwd: '/path/to/puppet-engine',
-       instances: 1,
-       autorestart: true,
-       watch: false,
-       max_memory_restart: '1G',
-       env: {
-         NODE_ENV: 'production',
-         ENVIRONMENT: 'production',
-         LOG_LEVEL: 'INFO'
-       },
-       env_file: '.env',
-       error_file: './logs/err.log',
-       out_file: './logs/out.log',
-       log_file: './logs/combined.log',
-       time: true
-     }]
-   };
-   ```
-
-3. **Start with PM2**:
-   ```bash
-   # Start the application
-   pm2 start ecosystem.config.js
+1. **Create Service File**:
+   ```ini
+   # /etc/systemd/system/puppet-engine.service
+   [Unit]
+   Description=Puppet Engine AI Agent System
+   After=network.target
    
-   # Monitor the application
-   pm2 monit
+   [Service]
+   Type=simple
+   User=puppet-engine
+   Group=puppet-engine
+   WorkingDirectory=/opt/puppet-engine
+   Environment=PATH=/opt/puppet-engine/venv/bin
+   Environment=ENVIRONMENT=production
+   Environment=LOG_LEVEL=INFO
+   ExecStart=/opt/puppet-engine/venv/bin/python -m src.main --production
+   Restart=always
+   RestartSec=10
+   
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+2. **Setup and Start Service**:
+   ```bash
+   # Create user
+   sudo useradd -r -s /bin/false puppet-engine
+   
+   # Set permissions
+   sudo chown -R puppet-engine:puppet-engine /opt/puppet-engine
+   
+   # Enable and start service
+   sudo systemctl daemon-reload
+   sudo systemctl enable puppet-engine
+   sudo systemctl start puppet-engine
+   
+   # Check status
+   sudo systemctl status puppet-engine
    
    # View logs
-   pm2 logs puppet-engine
-   
-   # Restart the application
-   pm2 restart puppet-engine
-   
-   # Stop the application
-   pm2 stop puppet-engine
+   sudo journalctl -u puppet-engine -f
    ```
 
-4. **PM2 Startup Script**:
+3. **Service Management**:
    ```bash
-   # Generate startup script
-   pm2 startup
+   # Start the service
+   sudo systemctl start puppet-engine
    
-   # Save current PM2 configuration
-   pm2 save
+   # Stop the service
+   sudo systemctl stop puppet-engine
+   
+   # Restart the service
+   sudo systemctl restart puppet-engine
+   
+   # Check status
+   sudo systemctl status puppet-engine
    ```
 
 ### Method 3: Docker Deployment
@@ -315,7 +313,7 @@ Docker provides consistent deployment across environments.
    docker-compose down
    ```
 
-### Method 4: Systemd Service
+### Method 3: Systemd Service
 
 For Linux systems, use systemd for service management.
 

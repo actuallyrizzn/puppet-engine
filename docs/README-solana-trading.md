@@ -26,7 +26,7 @@ This creates a more immersive and realistic AI persona that exists not just on s
 
 ### Prerequisites
 
-1. Node.js (v16+)
+1. Python 3.11+
 2. Git
 3. Solana wallet with SOL for transactions
 4. Twitter developer account (for agent posting)
@@ -48,7 +48,7 @@ This creates a more immersive and realistic AI persona that exists not just on s
 
 3. Install dependencies
    ```
-   npm install @solana/web3.js @solana/spl-token dotenv
+   pip install -r requirements.txt
    ```
 
 4. Create a `.env` file with the following variables:
@@ -77,7 +77,7 @@ This creates a more immersive and realistic AI persona that exists not just on s
 
 5. Test the integration
    ```
-   node test-solana-integration.js
+   python -m pytest tests/unit/test_solana.py
    ```
 
 ### Multiple Agent Configuration
@@ -194,21 +194,16 @@ puppet-engine/
 ├─ config/
 │  ├─ agents/
 │     ├─ claudia-agent.json
-├─ packages/
-│  ├─ puppet-engine/
-│  │  ├─ agent-loader.js
-│  │  ├─ trader-integration.js
+├─ src/
+│  ├─ agents/
+│  ├─ solana/
 │  ├─ trading/
-│  │  ├─ autonomous-trader.js
-│  ├─ solana-agent-kit/  
-│     ├─ packages/
-│        ├─ core/
-│           ├─ src/
-│           ├─ package.json
 ├─ examples/
-│  ├─ trading-agent-demo.js
+│  ├─ trading_agent_demo.py
 ├─ .env
-├─ test-solana-integration.js
+├─ tests/
+│  ├─ unit/
+│     ├─ test_solana.py
 └─ README-solana-trading.md
 ```
 
@@ -216,22 +211,21 @@ puppet-engine/
 
 To start an agent with trading capabilities:
 
-```javascript
-const AgentLoader = require('./packages/puppet-engine/agent-loader');
-const PuppetEngine = require('./packages/puppet-engine/puppet-engine');
+```python
+from src.agents.agent_manager import AgentManager
+from src.core.settings import Settings
 
-// Initialize Puppet Engine
-const puppetEngine = new PuppetEngine({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+# Initialize settings
+settings = Settings()
 
-// Load and initialize agent
-const agentLoader = new AgentLoader();
-const agentId = 'claudia-agent';
-await agentLoader.loadAgent(agentId);
-const agentInstance = await agentLoader.initializeAgent(agentId, puppetEngine);
+# Initialize agent manager
+agent_manager = AgentManager(settings)
 
-// Trading is automatically initialized if configured in the agent
+# Load and initialize agent
+agent_id = 'claudia-agent'
+agent = await agent_manager.load_agent(agent_id)
+
+# Trading is automatically initialized if configured in the agent
 ```
 
 ## Demo
@@ -239,7 +233,7 @@ const agentInstance = await agentLoader.initializeAgent(agentId, puppetEngine);
 Run the trading agent demo:
 
 ```
-node examples/trading-agent-demo.js
+python examples/trading_agent_demo.py
 ```
 
 ## Security Considerations
@@ -258,10 +252,11 @@ node examples/trading-agent-demo.js
 
 - **Authentication errors**: Check that your environment variables are set correctly, especially your Solana private key and RPC URL.
 
-- **Import errors**: If you encounter errors importing from the Solana Agent Kit, ensure your import paths are correct:
-  ```javascript
-  // Use this path when importing from your code
-  const { createAgent } = require('../solana-agent-kit/packages/core');
+- **Import errors**: If you encounter errors importing from the Solana modules, ensure your import paths are correct:
+  ```python
+  # Use this path when importing from your code
+  from src.solana.trader import SolanaTrader
+  from src.solana.wallet import SolanaWallet
   ```
 
 - **Trades Not Executing**: Check wallet balance, RPC connectivity, and trading conditions.
@@ -323,16 +318,16 @@ You can customize various aspects of the trading behavior:
 
 ### Project Structure
 
-- `packages/trading/autonomous-trader.js`: Core trading decision logic
-- `packages/puppet-engine/trader-integration.js`: Integration with Puppet Engine
-- `packages/puppet-engine/agent-loader.js`: Agent loading with trading support
-- `examples/trading-agent-demo.js`: Demo script
+- `src/solana/trader.py`: Core trading decision logic
+- `src/solana/wallet.py`: Solana wallet integration
+- `src/agents/agent_manager.py`: Agent loading with trading support
+- `examples/trading_agent_demo.py`: Demo script
 
 ### Adding New Features
 
 To add new trading capabilities:
 
-1. Add the method to the Solana Agent Kit integration in `autonomous-trader.js`
+1. Add the method to the Solana integration in `src/solana/trader.py`
 2. Update the agent configuration to allow the new method
 3. Extend the trader integration as needed
 
