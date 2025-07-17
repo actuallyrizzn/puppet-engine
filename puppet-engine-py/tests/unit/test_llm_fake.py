@@ -1,7 +1,17 @@
 import pytest
 from src.llm.fake_provider import FakeLLMProvider
 
-def test_generate():
+@pytest.mark.asyncio
+async def test_generate_content():
     provider = FakeLLMProvider({'model': 'fake'})
-    result = provider.generate('prompt')
-    assert isinstance(result, str) 
+    result = await provider.generate_content('prompt')
+    assert isinstance(result.content, str)
+    assert 'FAKE LLM' in result.content
+
+@pytest.mark.asyncio
+async def test_generate_tweet():
+    provider = FakeLLMProvider({'model': 'fake'})
+    from unittest.mock import MagicMock
+    agent = MagicMock(name='test_agent')
+    result = await provider.generate_tweet(agent, 'prompt')
+    assert 'test_agent' in result 

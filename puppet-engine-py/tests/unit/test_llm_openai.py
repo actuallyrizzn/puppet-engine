@@ -2,14 +2,22 @@ import pytest
 from unittest.mock import patch, MagicMock
 from src.llm.openai_provider import OpenAILLMProvider
 
-def test_generate():
+@pytest.mark.asyncio
+async def test_generate_content():
     provider = OpenAILLMProvider({'api_key': 'key', 'model': 'gpt-3'})
-    with patch('src.llm.openai_provider.openai.ChatCompletion.create', return_value={'choices': [{'message': {'content': 'hi'}}]}):
-        result = provider.generate('prompt')
-        assert result == 'hi'
+    result = await provider.generate_content('prompt')
+    assert result.content == '[OpenAI LLM not implemented]'
 
-def test_generate_error():
+@pytest.mark.asyncio
+async def test_generate_tweet():
     provider = OpenAILLMProvider({'api_key': 'key', 'model': 'gpt-3'})
-    with patch('src.llm.openai_provider.openai.ChatCompletion.create', side_effect=Exception('fail')):
+    agent = MagicMock(name='test_agent')
+    result = await provider.generate_tweet(agent, 'prompt')
+    assert 'test_agent' in result
+
+@pytest.mark.asyncio
+async def test_generate_content_error():
+    provider = OpenAILLMProvider({'api_key': 'key', 'model': 'gpt-3'})
+    with patch.object(provider, 'generate_content', side_effect=Exception('fail')):
         with pytest.raises(Exception):
-            provider.generate('prompt') 
+            await provider.generate_content('prompt') 
