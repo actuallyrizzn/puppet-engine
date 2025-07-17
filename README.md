@@ -1,8 +1,25 @@
-# Puppet Engine
+# Puppet Engine (Python Fork)
 
 ![Puppet Engine Logo](puppetlogo.png)
 
-A real-time AI agent framework for deploying autonomous characters on Twitter that communicate, evolve, and perform unscripted social behavior.
+**🚀 Python Implementation of Puppet Engine**
+
+A real-time AI agent framework for deploying autonomous characters on Twitter that communicate, evolve, and perform unscripted social behavior. This is a **Python fork** of the original Node.js Puppet Engine, featuring complete feature parity with modern Python architecture.
+
+## About This Fork
+
+This repository contains a **complete Python reimplementation** of the original Puppet Engine project. The Python version offers:
+
+- **100% Feature Parity** with the original Node.js version
+- **Modern Python Architecture** using FastAPI, Pydantic, and async/await
+- **Enhanced Performance** with async operations and optimized database queries
+- **SQLite Integration** replacing MongoDB for simplified deployment
+- **Improved Type Safety** with comprehensive type annotations
+- **Better Testing** with pytest and comprehensive test coverage
+
+### Migration Status: ✅ Complete
+
+The Python migration is **100% complete** with all original functionality preserved and enhanced. See the [migration documentation](docs/README.md#migration-status) for details.
 
 ## Overview
 
@@ -33,12 +50,26 @@ Key features:
 - [Contributing](#contributing)
 - [License](#license)
 
+## Original Project
+
+This is a Python fork of the original **Puppet Engine** project. The original Node.js version can be found at the original repository.
+
+### Key Differences from Original
+
+| Feature | Original (Node.js) | This Fork (Python) |
+|---------|-------------------|-------------------|
+| **Language** | JavaScript/Node.js | Python 3.11+ |
+| **Framework** | Express.js | FastAPI |
+| **Database** | MongoDB | SQLite |
+| **Architecture** | Callback-based | Async/await |
+| **Type Safety** | JSDoc comments | Pydantic models |
+| **Testing** | Jest | pytest |
+
 ## Installation
 
 ### Prerequisites
 
 - Python 3.11+
-- Node.js 18+ (for legacy components)
 - Twitter API credentials
 - OpenAI API key (or other LLM provider)
 - Solana wallet (optional, for trading features)
@@ -333,12 +364,16 @@ We welcome contributions! Please see [docs/CONTRIBUTING.md](docs/CONTRIBUTING.md
 
 ## License
 
-This project is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License (CC-BY-SA 4.0).
+This Python fork is licensed under the Creative Commons Attribution-ShareAlike 4.0 International License (CC-BY-SA 4.0), maintaining the same license as the original Puppet Engine project.
 
 ### License Summary
 
-- **Attribution**: You must give appropriate credit, provide a link to the license, and indicate if changes were made.
+- **Attribution**: You must give appropriate credit to both this Python fork and the original Puppet Engine project, provide a link to the license, and indicate if changes were made.
 - **ShareAlike**: If you remix, transform, or build upon the material, you must distribute your contributions under the same license as the original.
+
+### Original Project Attribution
+
+This is a Python reimplementation of the original Puppet Engine project. Please ensure proper attribution to the original project when using this fork.
 
 ### Full License Text
 
@@ -356,6 +391,7 @@ This project includes third-party components with their own licenses. See [docs/
 
 ## Acknowledgments
 
+- **Original Puppet Engine Project** - This Python implementation is based on the original Node.js Puppet Engine
 - Twitter API for social media integration
 - OpenAI and xAI for LLM capabilities
 - Solana Foundation for blockchain infrastructure
