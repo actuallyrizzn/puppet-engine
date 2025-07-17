@@ -52,7 +52,8 @@ def test_solana_wallet_init():
         assert wallet.rpc_url == "https://api.mainnet-beta.solana.com"
         assert wallet.retry_attempts == 3
 
-def test_solana_wallet_get_balance():
+@pytest.mark.asyncio
+async def test_solana_wallet_get_balance():
     """Test getting wallet balance"""
     from unittest.mock import patch, MagicMock, AsyncMock
     with patch.dict('sys.modules', {
@@ -75,11 +76,11 @@ def test_solana_wallet_get_balance():
         from src.solana.wallet import SolanaWallet
         wallet = SolanaWallet("test_private_key")
         wallet.client.get_balance = AsyncMock(return_value=mock_response)
-        import asyncio
-        balance = asyncio.get_event_loop().run_until_complete(wallet.get_balance())
+        balance = await wallet.get_balance()
         assert balance == 1.0
 
-def test_solana_wallet_transfer():
+@pytest.mark.asyncio
+async def test_solana_wallet_transfer():
     """Test SOL transfer"""
     from unittest.mock import patch, MagicMock, AsyncMock
     with patch.dict('sys.modules', {
@@ -114,8 +115,7 @@ def test_solana_wallet_transfer():
         wallet = SolanaWallet("test_private_key")
         wallet.client.get_latest_blockhash = AsyncMock(return_value=mock_blockhash_response)
         wallet.client.send_transaction = AsyncMock(return_value=mock_transfer_response)
-        import asyncio
-        signature = asyncio.get_event_loop().run_until_complete(wallet.transfer_sol("destination_address", 0.1))
+        signature = await wallet.transfer_sol("destination_address", 0.1)
         assert signature == "test_signature"
 
 @pytest.mark.asyncio

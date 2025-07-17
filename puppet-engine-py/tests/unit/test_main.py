@@ -78,5 +78,8 @@ async def test_main_entrypoint():
     with patch('src.main.PuppetEngine') as MockEngine, \
          patch('src.main.signal.signal'), \
          patch('src.main.asyncio.run') as mock_run:
+        mock_engine_instance = AsyncMock()
+        MockEngine.return_value = mock_engine_instance
         await main()
-        MockEngine.assert_called() 
+        MockEngine.assert_called()
+        mock_engine_instance.start.assert_awaited() 

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 import sys
 
 # Patch sys.modules to mock solana and its submodules
@@ -18,20 +18,23 @@ from src.solana.wallet import SolanaWallet
 def wallet():
     return SolanaWallet(private_key="test_key", rpc_url="http://localhost")
 
-def test_get_balance(wallet):
-    with patch.object(wallet, 'get_balance', return_value=100):
-        result = wallet.get_balance()
+@pytest.mark.asyncio
+async def test_get_balance(wallet):
+    with patch.object(wallet, 'get_balance', new_callable=AsyncMock, return_value=100):
+        result = await wallet.get_balance()
         assert result == 100
 
-def test_transfer_success(wallet):
-    with patch.object(wallet, 'transfer_sol', return_value={'tx': 'abc', 'status': 'success'}):
-        result = wallet.transfer_sol('recipient', 1)
+@pytest.mark.asyncio
+async def test_transfer_success(wallet):
+    with patch.object(wallet, 'transfer_sol', new_callable=AsyncMock, return_value={'tx': 'abc', 'status': 'success'}):
+        result = await wallet.transfer_sol('recipient', 1)
         assert result['status'] == 'success'
 
-def test_transfer_error(wallet):
-    with patch.object(wallet, 'transfer_sol', side_effect=Exception('fail')):
+@pytest.mark.asyncio
+async def test_transfer_error(wallet):
+    with patch.object(wallet, 'transfer_sol', new_callable=AsyncMock, side_effect=Exception('fail')):
         with pytest.raises(Exception):
-            wallet.transfer_sol('recipient', 1)
+            await wallet.transfer_sol('recipient', 1)
 
 def test_get_public_key(wallet):
     with patch.object(wallet, 'get_public_key', return_value='address'):
