@@ -49,8 +49,8 @@ The `custom_system_prompt` field is still used as a fallback if no rotating prom
 
 Two test scripts are provided to verify the rotating prompt system:
 
-1. `test-coby-tweets.js` - Tests tweet generation with rotating prompts
-2. `test-coby-replies.js` - Tests reply generation with rotating prompts
+1. `test_coby_tweets.py` - Tests tweet generation with rotating prompts
+2. `test_coby_replies.py` - Tests reply generation with rotating prompts
 
 Run these scripts to see how different prompts affect the output:
 
@@ -66,9 +66,9 @@ The system tracks which prompt was used for each generated tweet in the tweet's 
 
 The rotating prompt system is implemented in several files:
 
-- `src/core/types.js` - Added `rotatingSystemPrompts` property to the Agent class
-- `src/agents/agent-manager.js` - Updated to load rotating prompts from configuration
-- `src/llm/openai-provider.js` - Added logic to select a random prompt for each generation
-- `src/llm/tweet-variety-helpers.js` - Added logging helper for prompt selection
+- `src/core/models.py` - Added `rotating_system_prompts` property to the Agent class
+- `src/agents/agent_manager.py` - Updated to load rotating prompts from configuration
+- `src/llm/openai_provider.py` - Added logic to select a random prompt for each generation
+- `src/llm/tweet_variety_helpers.py` - Added logging helper for prompt selection
 
 The implementation ensures prompt rotation for both standalone tweets and replies to other tweets. 
