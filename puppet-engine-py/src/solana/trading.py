@@ -3,7 +3,7 @@ from typing import Dict, Any, Optional
 from .wallet import SolanaWallet
 
 class SolanaTrader:
-    def __init__(self, wallet: SolanaWallet):
+    def __init__(self, wallet: Any):  # Changed from SolanaWallet to Any for test flexibility
         self.wallet = wallet
         self.jupiter_api_url = "https://quote-api.jup.ag/v6"
         self.client = httpx.AsyncClient()

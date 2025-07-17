@@ -1,1 +1,1 @@
-Core domain models and settings for Puppet Engine.""" 
+# Core domain models and settings for Puppet Engine 

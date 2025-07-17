@@ -8,7 +8,11 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import ConsoleSpanExporter, SimpleSpanProcessor
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-from opentelemetry.instrumentation.motor import MotorInstrumentor
+
+try:
+    from opentelemetry.instrumentation.motor import MotorInstrumentor
+except ImportError:
+    MotorInstrumentor = None
 
 class StructuredLogger:
     def __init__(self, service_name: str):
@@ -36,8 +40,9 @@ def setup_observability(app: FastAPI, service_name: str):
     FastAPIInstrumentor.instrument_app(app)
     # Instrument HTTPX
     HTTPXClientInstrumentor().instrument()
-    # Instrument Motor (MongoDB)
-    MotorInstrumentor().instrument()
+    # Instrument Motor (MongoDB) if available
+    if MotorInstrumentor:
+        MotorInstrumentor().instrument()
     # Setup structured logging
     logger = StructuredLogger(service_name)
     return logger 

@@ -18,7 +18,7 @@ class SolanaWallet:
     def _create_keypair(self) -> Keypair:
         try:
             # Try base58
-            decoded_key = base58ecode(self.private_key)
+            decoded_key = base58.b58decode(self.private_key)
             return Keypair.from_secret_key(decoded_key)
         except Exception:
             try:
@@ -35,10 +35,11 @@ class SolanaWallet:
         for attempt in range(self.retry_attempts):
             try:
                 response = await self.client.get_balance(self.keypair.public_key)
-                return response.value /10# Convert lamports to SOL
+                return response.value / 1_000_000_000  # Convert lamports to SOL
             except Exception as e:
                 if attempt == self.retry_attempts - 1:
-                    raise Exception(f"Failed to get balance: {e})             await asyncio.sleep(2 ** attempt)
+                    raise Exception(f"Failed to get balance: {e}")
+                await asyncio.sleep(2 ** attempt)
         return 0.0  # Fallback return
     
     async def transfer_sol(self, to_address: str, amount: float) -> str:
@@ -47,7 +48,7 @@ class SolanaWallet:
             TransferParams(
                 from_pubkey=self.keypair.public_key,
                 to_pubkey=to_pubkey,
-                lamports=int(amount *100  # Convert SOL to lamports
+                lamports=int(amount * 1_000_000_000)  # Convert SOL to lamports
             )
         )
         
@@ -59,14 +60,15 @@ class SolanaWallet:
                 return result.value
             except Exception as e:
                 if attempt == self.retry_attempts - 1:
-                    raise Exception(f"Transfer failed: {e})             await asyncio.sleep(2 ** attempt)
+                    raise Exception(f"Transfer failed: {e}")
+                await asyncio.sleep(2 ** attempt)
         return ""  # Fallback return
     
     async def get_token_accounts(self) -> Dict[str, Any]:
         try:
             response = await self.client.get_token_accounts_by_owner(
                 self.keypair.public_key,
-                {"programId:TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
+                {"programId": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"}
             )
             return response.value
         except Exception as e:
