@@ -18,12 +18,15 @@ class EventEngine:
         self.scheduled_events: List[Event] = []
         self.is_processing = False
         self.event_history: List[Event] = []
+        self._tasks: List[asyncio.Task] = []
 
     async def start(self):
         """Start event processing loop."""
+        print("[EventEngine] START called")
         self.is_processing = True
-        asyncio.create_task(self._process_events())
-        asyncio.create_task(self._check_scheduled_events())
+        task1 = asyncio.create_task(self._process_events())
+        task2 = asyncio.create_task(self._check_scheduled_events())
+        self._tasks.extend([task1, task2])
 
     async def _process_events(self):
         """Main event processing loop."""
@@ -66,5 +69,16 @@ class EventEngine:
     def queue_event(self, event: Event):
         self.event_queue.append(event)
 
-    def stop(self):
-        self.is_processing = False 
+    async def stop(self):
+        print("[EventEngine] STOP called")
+        self.is_processing = False
+        # Cancel and await all background tasks
+        for task in self._tasks:
+            if not task.done():
+                task.cancel()
+        for task in self._tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+        self._tasks.clear() 

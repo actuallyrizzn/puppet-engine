@@ -28,6 +28,7 @@ class PuppetEngine:
         self.logger = StructuredLogger("puppet-engine")
         self.components: Dict[str, Any] = {}
         self.is_running = False
+        self._periodic_tasks = []  # Track periodic event tasks
         
     async def initialize(self) -> Dict[str, Any]:
         """Initialize the Puppet Engine"""
@@ -208,10 +209,12 @@ class PuppetEngine:
                     )
                     event_engine.queue_event(interaction_event)
         
-        # Start periodic event tasks
-        asyncio.create_task(schedule_news_event())
-        asyncio.create_task(schedule_mood_event())
-        asyncio.create_task(schedule_interaction_event())
+        # Start periodic event tasks and track them
+        t1 = asyncio.create_task(schedule_news_event())
+        t2 = asyncio.create_task(schedule_mood_event())
+        t3 = asyncio.create_task(schedule_interaction_event())
+        self._periodic_tasks.extend([t1, t2, t3])
+        print(f"[PuppetEngine] Started periodic event tasks: {[str(t) for t in self._periodic_tasks]}")
     
     def _generate_random_news(self) -> str:
         """Generate random news content"""
@@ -248,13 +251,25 @@ class PuppetEngine:
         self.is_running = False
         
         try:
+            # Stop periodic event tasks
+            for task in self._periodic_tasks:
+                if not task.done():
+                    task.cancel()
+            for task in self._periodic_tasks:
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            print(f"[PuppetEngine] Cleaned up {len(self._periodic_tasks)} periodic event tasks.")
+            self._periodic_tasks.clear()
+            
             # Stop streaming mentions
             if 'agent_manager' in self.components:
                 await self.components['agent_manager'].stop_streaming_mentions()
             
             # Stop event engine
             if 'event_engine' in self.components:
-                self.components['event_engine'].stop()
+                await self.components['event_engine'].stop()
             
             # Close Twitter client
             if 'twitter_client' in self.components:

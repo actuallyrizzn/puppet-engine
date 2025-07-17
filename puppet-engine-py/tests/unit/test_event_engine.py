@@ -22,7 +22,7 @@ async def test_event_engine_queue_and_listener():
     await asyncio.sleep(0.1)
     
     # Stop the engine
-    engine.stop()
+    await engine.stop()
     await asyncio.sleep(0.1)
     
     assert "test" in results 
