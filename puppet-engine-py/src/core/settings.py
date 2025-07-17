@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     
     # Security
     secret_manager: str = "env"  # env, vault, aws-secrets-manager
+    vault_addr: Optional[str] = None
+    vault_token: Optional[str] = None
+    vault_path: Optional[str] = None
     
     class Config:
         env_file = ".env"
