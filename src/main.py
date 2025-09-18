@@ -111,7 +111,7 @@ class PuppetEngine:
                 'event_engine': event_engine,
                 'agent_manager': agent_manager,
                 'api_server': api_server,
-                'mongo_connected': True # SQLite is always connected
+                'file_store_active': True
             }
             
             return self.components
@@ -130,9 +130,8 @@ class PuppetEngine:
             event_engine = components['event_engine']
             await event_engine.start()
             
-            # Start API server (this would typically run on a separate port)
-            # For now, we'll just log that it's ready
-            self.logger.log("info", f"API server ready on port {getattr(self.settings, 'port', 8000)}")
+            # API server app is created; serve with uvicorn in production via separate process
+            self.logger.log("info", f"API server app initialized. Serve via uvicorn on port {getattr(self.settings, 'port', 8000)}")
             
             # Start real-time streaming for Twitter mentions
             agent_manager = components['agent_manager']
@@ -147,8 +146,7 @@ class PuppetEngine:
             
             # Log startup completion
             self.logger.log("info", "Puppet Engine started successfully. 🎭")
-            self.logger.log("info", f"API server running on port {getattr(self.settings, 'port', 8000)}")
-            self.logger.log("info", f"MongoDB connection: {'ACTIVE' if components['mongo_connected'] else 'INACTIVE - using file storage'}")
+            self.logger.log("info", f"File-backed storage: {'ACTIVE' if components['file_store_active'] else 'INACTIVE'}")
             
             # Keep the engine running
             while self.is_running:
@@ -214,7 +212,7 @@ class PuppetEngine:
         t2 = asyncio.create_task(schedule_mood_event())
         t3 = asyncio.create_task(schedule_interaction_event())
         self._periodic_tasks.extend([t1, t2, t3])
-        print(f"[PuppetEngine] Started periodic event tasks: {[str(t) for t in self._periodic_tasks]}")
+        self.logger.log("info", f"Started periodic event tasks: {[str(t) for t in self._periodic_tasks]}")
     
     def _generate_random_news(self) -> str:
         """Generate random news content"""
@@ -312,9 +310,11 @@ async def main():
         # Start the engine
         await engine_instance.start()
     except KeyboardInterrupt:
-        print("\nReceived interrupt signal")
+        if engine_instance and engine_instance.logger:
+            engine_instance.logger.log("info", "Received interrupt signal")
     except Exception as error:
-        print(f"Error in main: {error}")
+        if engine_instance and engine_instance.logger:
+            engine_instance.logger.log("error", f"Error in main: {error}")
         sys.exit(1)
     finally:
         # Ensure cleanup

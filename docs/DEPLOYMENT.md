@@ -138,17 +138,17 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
 
 2. **Run Production Server**:
    ```bash
-   # Production mode
-   python -m src.main --production
+   # API server (ASGI)
+   uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --workers 2
    
    # With specific configuration
-   python -m src.main --config /path/to/production.env --production
+   python -m src.main --config /path/to/production.env
    ```
 
 3. **Process Management**:
    ```bash
    # Using nohup (basic)
-   nohup python -m src.main --production > puppet_engine.log 2>&1 &
+   nohup python -m src.main > puppet_engine.log 2>&1 &
    
    # Using screen
    screen -S puppet-engine
@@ -156,15 +156,15 @@ uvicorn src.api.server:app --reload --host 0.0.0.0 --port 8000
    # Ctrl+A, D to detach
    ```
 
-### Method 2: Systemd Service (Recommended for Linux)
+### Method 2: Systemd Services (Recommended for Linux)
 
 Systemd provides process management, auto-restart, and monitoring for Linux systems.
 
-1. **Create Service File**:
+1. **Create API Service File**:
    ```ini
-   # /etc/systemd/system/puppet-engine.service
+   # /etc/systemd/system/puppet-api.service
    [Unit]
-   Description=Puppet Engine AI Agent System
+   Description=Puppet Engine API
    After=network.target
    
    [Service]
@@ -173,9 +173,7 @@ Systemd provides process management, auto-restart, and monitoring for Linux syst
    Group=puppet-engine
    WorkingDirectory=/opt/puppet-engine
    Environment=PATH=/opt/puppet-engine/venv/bin
-   Environment=ENVIRONMENT=production
-   Environment=LOG_LEVEL=INFO
-   ExecStart=/opt/puppet-engine/venv/bin/python -m src.main --production
+   ExecStart=/opt/puppet-engine/venv/bin/uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --workers 2
    Restart=always
    RestartSec=10
    
@@ -183,7 +181,28 @@ Systemd provides process management, auto-restart, and monitoring for Linux syst
    WantedBy=multi-user.target
    ```
 
-2. **Setup and Start Service**:
+2. **Create Engine Service File**:
+   ```ini
+   # /etc/systemd/system/puppet-engine.service
+   [Unit]
+   Description=Puppet Engine runtime
+   After=network.target puppet-api.service
+   
+   [Service]
+   Type=simple
+   User=puppet-engine
+   Group=puppet-engine
+   WorkingDirectory=/opt/puppet-engine
+   Environment=PATH=/opt/puppet-engine/venv/bin
+   ExecStart=/opt/puppet-engine/venv/bin/python -m src.main
+   Restart=always
+   RestartSec=10
+   
+   [Install]
+   WantedBy=multi-user.target
+   ```
+
+3. **Setup and Start Services**:
    ```bash
    # Create user
    sudo useradd -r -s /bin/false puppet-engine
@@ -193,17 +212,18 @@ Systemd provides process management, auto-restart, and monitoring for Linux syst
    
    # Enable and start service
    sudo systemctl daemon-reload
-   sudo systemctl enable puppet-engine
-   sudo systemctl start puppet-engine
+   sudo systemctl enable puppet-api puppet-engine
+   sudo systemctl start puppet-api puppet-engine
    
    # Check status
-   sudo systemctl status puppet-engine
+   sudo systemctl status puppet-api puppet-engine
    
    # View logs
+   sudo journalctl -u puppet-api -f
    sudo journalctl -u puppet-engine -f
    ```
 
-3. **Service Management**:
+4. **Service Management**:
    ```bash
    # Start the service
    sudo systemctl start puppet-engine
@@ -215,10 +235,10 @@ Systemd provides process management, auto-restart, and monitoring for Linux syst
    sudo systemctl restart puppet-engine
    
    # Check status
-   sudo systemctl status puppet-engine
+   sudo systemctl status puppet-api puppet-engine
    ```
 
-### Method 3: Docker Deployment
+### Docker Deployment (not required)
 
 Docker provides consistent deployment across environments.
 
@@ -313,7 +333,7 @@ Docker provides consistent deployment across environments.
    docker-compose down
    ```
 
-### Method 3: Systemd Service
+### Systemd Service
 
 For Linux systems, use systemd for service management.
 
