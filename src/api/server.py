@@ -17,9 +17,15 @@ class APIServer:
         self._setup_observability()
 
     def _setup_middleware(self):
+        # Parse CORS allowlist from settings (comma-separated string)
+        allowlist_str = getattr(self.settings, "cors_allow_origins", None)
+        allowlist = []
+        if allowlist_str:
+            allowlist = [origin.strip() for origin in allowlist_str.split(",") if origin.strip()]
+
         self.app.add_middleware(
             CORSMiddleware,
-            allow_origins=["*"],
+            allow_origins=allowlist,
             allow_credentials=True,
             allow_methods=["*"],
             allow_headers=["*"],
@@ -29,6 +35,14 @@ class APIServer:
         @self.app.get("/health")
         async def health():
             return {"status": "ok"}
+
+        @self.app.get("/config/cors")
+        async def cors_config():
+            allowlist_str = getattr(self.settings, "cors_allow_origins", None)
+            allowlist = []
+            if allowlist_str:
+                allowlist = [origin.strip() for origin in allowlist_str.split(",") if origin.strip()]
+            return {"allow_origins": allowlist}
 
         @self.app.get("/agents")
         async def list_agents():
@@ -51,7 +65,17 @@ class APIServer:
             return {"agent_id": agent_id, "action": "trade_triggered"}
 
     def _setup_observability(self):
+        # Metrics
         Instrumentator().instrument(self.app).expose(self.app)
+        # Tracing (env-gated)
+        from ..utils.observability import setup_observability
+        setup_observability(
+            self.app,
+            service_name="puppet-api",
+            enable_tracing=bool(getattr(self.settings, "enable_tracing", False)),
+            otlp_endpoint=getattr(self.settings, "otlp_endpoint", None),
+            enable_console_tracing=bool(getattr(self.settings, "enable_console_tracing", False)),
+        )
 
 # Entrypoint for running the API
 app = APIServer(settings).app 

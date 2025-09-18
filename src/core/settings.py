@@ -30,6 +30,14 @@ class Settings(BaseSettings):
     vault_addr: Optional[str] = None
     vault_token: Optional[str] = None
     vault_path: Optional[str] = None
+
+    # CORS / API
+    cors_allow_origins: Optional[str] = None  # Comma-separated origins, e.g. "https://example.com,https://app.example.com"
+
+    # Observability / Tracing
+    enable_tracing: bool = False
+    enable_console_tracing: bool = False
+    otlp_endpoint: Optional[str] = None  # e.g. http://otel-collector:4317
     
     class Config:
         env_file = ".env"

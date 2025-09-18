@@ -323,25 +323,19 @@ python -m src.main --dev
 
 ### Production
 
-```bash
-# Start production server
-python -m src.main --production
-
-# Using PM2 (recommended)
-pm2 start ecosystem.config.js
-```
-
-### Docker
+Run as two processes under a supervisor (e.g., systemd):
 
 ```bash
-# Build image
-docker build -t puppet-engine .
+# API server (ASGI)
+uvicorn src.api.server:app --host 0.0.0.0 --port 8000 --workers 2
 
-# Run container
-docker run -p 8000:8000 --env-file .env puppet-engine
+# Engine runtime (agents/events)
+python -m src.main
 ```
 
-See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) for detailed deployment instructions.
+See docs/DEPLOYMENT.md for systemd unit examples.
+
+Docker is not required for deployment; bare‑metal or VM deployment via systemd is supported and recommended here.
 
 ## Contributing
 

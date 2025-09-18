@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import Dict, List, Any, Callable, Optional
 from datetime import datetime, timedelta
 from enum import Enum
@@ -11,6 +12,8 @@ class EventPriority(Enum):
     HIGH = 2
     CRITICAL = 3
 
+logger = logging.getLogger(__name__)
+
 class EventEngine:
     def __init__(self):
         self.event_queue: List[Event] = []
@@ -22,7 +25,7 @@ class EventEngine:
 
     async def start(self):
         """Start event processing loop."""
-        print("[EventEngine] START called")
+        logger.info("[EventEngine] START called")
         self.is_processing = True
         task1 = asyncio.create_task(self._process_events())
         task2 = asyncio.create_task(self._check_scheduled_events())
@@ -70,7 +73,7 @@ class EventEngine:
         self.event_queue.append(event)
 
     async def stop(self):
-        print("[EventEngine] STOP called")
+        logger.info("[EventEngine] STOP called")
         self.is_processing = False
         # Cancel and await all background tasks
         for task in self._tasks:
